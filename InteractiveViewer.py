@@ -116,8 +116,8 @@ class InteractiveViewer(tk.Tk):
 
 if __name__ == "__main__":
     # 初始化 Viewer 类并传入多个 JSON 文件路径
-    viewer = Viewer(["train/train.json", "test1/test1.json"])  # 请替换为你的 JSON 文件路径列表
-
+    viewer = Viewer()# 请替换为你的 JSON 文件路径列表
+    viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
     # 启动交互式窗口
     app = InteractiveViewer(viewer)
     app.mainloop()

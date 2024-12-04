@@ -5,32 +5,31 @@ import matplotlib.image as mpimg
 
 
 class Viewer:
-    def __init__(self, json_file_paths):
+    def __init__(self):
         """
         初始化 Viewer 类，加载多个 JSON 数据。
-
-        :param json_file_paths: JSON 文件路径，可以是单个路径字符串或路径列表
         """
-        # 如果传入的是单个路径字符串，则转换为列表
-        if isinstance(json_file_paths, str):
-            json_file_paths = [json_file_paths]
 
-        self.data = self.load_data(json_file_paths)
+        self.data = None
         self.current_index = 0  # 默认显示第一个产品
         self.interactive_mode = False  # 默认非交互模式
 
-    def load_data(self, json_file_paths):
+    def load_data_from_path(self, json_file_paths):
         """
         读取并解析多个 JSON 文件，返回合并后的数据。
 
         :param json_file_paths: 包含多个 JSON 文件路径的列表
         :return: 合并后的 JSON 数据
         """
+        if isinstance(json_file_paths, str):
+            json_file_paths = [json_file_paths]
+
         all_data = []
         for file_path in json_file_paths:
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     data = json.load(file)
+                    # print(type(data))
                     # 获取 JSON 文件的目录路径
                     base_dir = os.path.dirname(file_path)
 
@@ -45,7 +44,22 @@ class Viewer:
                 print(f"文件未找到：{file_path}")
             except json.JSONDecodeError:
                 print(f"文件格式错误：{file_path}")
-        return all_data
+        self.data = all_data
+
+    def load_data_from_json(self, json_data,images_dir='train/images'):
+        """
+        读取并解析 JSON 数据。
+        :param json_data:
+        :return:
+        """
+        if not isinstance(json_data, list):
+            raise ValueError("json_data 应该是一个json列表")
+        else:
+            for item in json_data:
+                if 'image' in item and item['image']:
+                    # 假设 image 字段是一个列表，修正列表中的每个路径
+                    item['image'] = [os.path.join(images_dir, img) for img in item['image']]
+        self.data = json_data
 
     def fix_image_path(self, base_dir, img_path):
         """
@@ -126,7 +140,7 @@ class Viewer:
 if __name__ == "__main__":
     # 使用示例
     # 初始化 Viewer 类并传入多个 JSON 文件路径
-    viewer = Viewer(["train/train.json", "test1/test1.json"])  # 请替换为你的 JSON 文件路径列表
-
+    viewer = Viewer() # 请替换为你的 JSON 文件路径列表
+    viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
     # 调用方法显示某个产品的信息和图片
     viewer.display_sample_info("9b24d96f-2961-41ba-8113-e82f1522869f-12275",['id','output'],show_image=True)
