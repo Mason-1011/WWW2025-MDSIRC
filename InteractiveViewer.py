@@ -57,7 +57,7 @@ class InteractiveViewer(tk.Tk):
         if sample_info:
             self.text_area.delete(1.0, tk.END)
             for key, value in sample_info.items():
-                self.text_area.insert(tk.END, f"{key}: {value}\n")
+                self.text_area.insert(tk.END, f"{key}: {value}\n\n")
 
             # Clear existing images
             for widget in self.image_frame.winfo_children():
@@ -118,6 +118,4 @@ if __name__ == "__main__":
     # 初始化 Viewer 类并传入多个 JSON 文件路径
     viewer = Viewer()# 请替换为你的 JSON 文件路径列表
     viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
-    # 启动交互式窗口
-    app = InteractiveViewer(viewer)
-    app.mainloop()
+
