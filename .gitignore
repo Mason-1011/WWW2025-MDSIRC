@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# PyCharm
+.idea/
+
+# test data 5G
+/test1/
