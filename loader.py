@@ -6,7 +6,6 @@ import re
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from itertools import permutations
-import random
 
 
 def load_data(config, shuffle=False):
@@ -14,15 +13,16 @@ def load_data(config, shuffle=False):
     加载数据，返回 DataLoader
     """
     dataset = TextDataset(config)
-    dataloader = DataLoader(dataset, batch_size=config["batch_size_relation"], shuffle=shuffle)
+    dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=shuffle)
     return dataloader
-
 
 
 class TextDataset(Dataset):
     def __init__(self, config):
         self.config = config
         self.tokenizer = AutoTokenizer.from_pretrained(config['model_path'])
+        self.max_length_map = config['max_length_map']
+        self.label_map = config['label_map']
         self.data = []
         self.json_data = []
         self.load()
@@ -46,23 +46,23 @@ class TextDataset(Dataset):
         self.json_data = data
 
     def preprocess_sample(self, sample, image_path, save='user+'):
-        if 'image' in sample and sample['image']:
-            # 假设 image 字段是一个列表，修正列表中的每个路径
-            sample['image'] = [os.path.join(image_path, 'images', img) for img in sample['image']]
-        sample['user_messages'], sample['customer_messages'] = zip(extract_messages(sample['instruction']))
+        sample['user_messages'], sample['customer_messages'] = extract_messages(sample['instruction'])
         sample['input_text'] = design_input_text(sample['user_messages'], sample['customer_messages'], save)
         sample['input_ids'] = self.tokenizer.encode(sample['input_text'], truncation=True, padding='max_length',
-                                                    max_length=self.config['max_length_map'][save])
-        sample['output_id'] = self.config['label_map'][sample['output']]
+                                                    max_length=self.max_length_map[save])
+        sample['output_id'] = self.label_map[sample['output']]
 
     def append_data(self, sample):
-        pass
+        input_ids = torch.tensor(sample['input_ids'])
+        output_id = torch.tensor(sample['output_id'])
+        self.data.append([sample['id'], input_ids, output_id])
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         return self.data[idx]
+
 
 def extract_messages(instruction):
     # Regular expressions to extract user and customer messages
@@ -74,8 +74,10 @@ def extract_messages(instruction):
     customer_messages = re.findall(customer_pattern, instruction)
     return user_messages, customer_messages
 
+
 def design_input_text(user_messages, customer_messages, save='user+'):
     input_text = ''
+    # print(user_messages)
     if save == 'user+':
         input_text = '用户: ' + ' '.join(user_messages)
     elif save == 'user+customer-':
@@ -95,4 +97,14 @@ def design_input_text(user_messages, customer_messages, save='user+'):
 
 
 if __name__ == '__main__':
-    pass
+    from config import config
+    data = load_data(config)
+    # for batch in data:
+    #     id,input,output = batch
+    #     print(id,input,output)
+    from Viewer import Viewer, InteractiveViewer
+    viewer = Viewer()
+    viewer.load_data_from_json(data.dataset.json_data)
+    app = InteractiveViewer(viewer)
+    app.mainloop()
+
