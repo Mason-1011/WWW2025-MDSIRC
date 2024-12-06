@@ -1,5 +1,5 @@
 import json
-import pandas as pd
+
 import os
 import torch
 import re
@@ -8,18 +8,24 @@ from transformers import AutoTokenizer
 from itertools import permutations
 
 
-def load_data(config, shuffle=False):
+def load_data(config, task_type, path, shuffle=False):
     """
     加载数据，返回 DataLoader
     """
-    dataset = TextDataset(config)
+    if task_type == 'text':
+        dataset = TextDataset(path, config)
+    elif task_type == 'image':
+        dataset = ImageDataset(path, config)
+    else:
+        raise ValueError("Invalid dataset type: {}".format(task_type))
     dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=shuffle)
     return dataloader
 
 
 class TextDataset(Dataset):
-    def __init__(self, config):
+    def __init__(self, path, config):
         self.config = config
+        self.path = path
         self.tokenizer = AutoTokenizer.from_pretrained(config['model_path'])
         self.max_length_map = config['max_length_map']
         self.label_map = config['label_map']
@@ -28,7 +34,7 @@ class TextDataset(Dataset):
         self.load()
 
     def load(self):
-        self.load_preprocess(self.config['data_path'])
+        self.load_preprocess(self.path)
         for sample in self.json_data:
             self.append_data(sample)
 
@@ -36,16 +42,13 @@ class TextDataset(Dataset):
         with open(data_path, 'r', encoding='utf-8') as file:
             data = json.load(file)
             # print(type(data))
-            # 获取 JSON 文件的目录路径
-            base_dir = os.path.dirname(data_path)
 
-            # 修正每个 item 中的图片路径
             for sample in data:
-                self.preprocess_sample(sample, base_dir, save=self.config['input_text_save'])
+                self.preprocess_sample(sample, save=self.config['input_text_save'])
 
         self.json_data = data
 
-    def preprocess_sample(self, sample, image_path, save='user+'):
+    def preprocess_sample(self, sample, save='user+'):
         sample['user_messages'], sample['customer_messages'] = extract_messages(sample['instruction'])
         sample['input_text'] = design_input_text(sample['user_messages'], sample['customer_messages'], save)
         sample['input_ids'] = self.tokenizer.encode(sample['input_text'], truncation=True, padding='max_length',
@@ -96,9 +99,14 @@ def design_input_text(user_messages, customer_messages, save='user+'):
     return input_text
 
 
+class ImageDataset(Dataset):
+    def __init__(self, config):
+        self.config = config
+
+
 if __name__ == '__main__':
     from config import config
-    data = load_data(config)
+    data = load_data(config, task_type='text', path=config['train_text_path'])
     # for batch in data:
     #     id,input,output = batch
     #     print(id,input,output)
@@ -107,4 +115,3 @@ if __name__ == '__main__':
     viewer.load_data_from_json(data.dataset.json_data)
     app = InteractiveViewer(viewer)
     app.mainloop()
-
