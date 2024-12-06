@@ -79,7 +79,7 @@ class TextEvaluator:
             recall = self.stats_dict[key]["正确预测数"] / (1e-5 + self.stats_dict[key]["真实数数"])
             F1 = (2 * precision * recall) / (precision + recall + 1e-5)
             F1_scores.append(F1)
-            self.logger.info("%s类关系，真实数量：%i,预测出数量：%i,准确率：%f, 召回率: %f, F1: %f" % (key, self.stats_dict[key]["真实数数"],self.stats_dict[key]["预测数"],precision, recall, F1))
+            self.logger.info("%s，真实数量：%i,预测出数量：%i,准确率：%f, 召回率: %f, F1: %f" % (key, self.stats_dict[key]["真实数数"],self.stats_dict[key]["预测数"],precision, recall, F1))
         self.logger.info("Macro-F1: %f" % np.mean(F1_scores))
         correct_pred = sum([self.stats_dict[key]["正确预测数"] for key in self.stats_dict.keys()])
         total_pred = sum([self.stats_dict[key]["预测数"] for key in self.stats_dict.keys()])

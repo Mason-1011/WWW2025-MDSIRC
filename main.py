@@ -111,7 +111,8 @@ def Text_Train(config, model_title):
 
 if __name__ == '__main__':
     outputs = []
-    for pooling_mode in ['mean', 'max', 'cls', 'concat']:
+    for pooling_mode in [''
+                         '', 'max', 'cls', 'concat']:
         config['pooling_mode'] = pooling_mode
         model_title = f"{config['output_block']}_{config['pooling_mode']}"
         _, _, micro_f1s = Text_Train(config, model_title)
