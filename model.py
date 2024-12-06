@@ -178,37 +178,37 @@ class TextModel(nn.Module):
             x = self.encoder(input_ids).last_hidden_state[:, -1, :]  # x.shape: [batch_size, hidden_size]
         else:
             x = self.encoder(input_ids).last_hidden_state  # x.shape: [batch_size, seq_length, hidden_size]
-        # print('encoder shape:',x.shape)
+            # print('encoder shape:',x.shape)
 
-        # 根据 output_block 参数选择输出
-        if self.output_block == 'BiLSTM':
-            # 使用 BiLSTM 处理编码后的特征
-            lstm_output, _ = self.bilstm(x)
-            # print('bilstm middle shape:',lstm_output.shape)
-            lstm_output = self.lstm_proj(lstm_output)
-            # print('bilstm output shape:',lstm_output.shape)
-            x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-            # print('bilstm+layer_norm output shape:',x.shape)
-        elif self.output_block == 'Transformer':
-            # 使用 Transformer 处理编码后的特征
-            x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        elif self.output_block == 'TransformerEncoder':
-            # 使用 TransformerEncoder 处理编码后的特征
-            x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        elif self.output_block == 'BiLSTM+Transformer':
-            # 使用 BiLSTM 和 Transformer 处理编码后的特征
-            lstm_output, _ = self.bilstm(x)
-            lstm_output = self.lstm_proj(lstm_output)
-            x = self.layer_norm(lstm_output + x)
-            x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        elif self.output_block == 'BiLSTM+TransformerEncoder':
-            # 使用 BiLSTM 和 TransformerEncoder 处理编码后的特征
-            lstm_output, _ = self.bilstm(x)
-            lstm_output = self.lstm_proj(lstm_output)
-            x = self.layer_norm(lstm_output + x)
-            x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        else:
-            x = x
+            # 根据 output_block 参数选择输出
+            if self.output_block == 'BiLSTM':
+                # 使用 BiLSTM 处理编码后的特征
+                lstm_output, _ = self.bilstm(x)
+                # print('bilstm middle shape:',lstm_output.shape)
+                lstm_output = self.lstm_proj(lstm_output)
+                # print('bilstm output shape:',lstm_output.shape)
+                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
+                # print('bilstm+layer_norm output shape:',x.shape)
+            elif self.output_block == 'Transformer':
+                # 使用 Transformer 处理编码后的特征
+                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
+            elif self.output_block == 'TransformerEncoder':
+                # 使用 TransformerEncoder 处理编码后的特征
+                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
+            elif self.output_block == 'BiLSTM+Transformer':
+                # 使用 BiLSTM 和 Transformer 处理编码后的特征
+                lstm_output, _ = self.bilstm(x)
+                lstm_output = self.lstm_proj(lstm_output)
+                x = self.layer_norm(lstm_output + x)
+                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
+            elif self.output_block == 'BiLSTM+TransformerEncoder':
+                # 使用 BiLSTM 和 TransformerEncoder 处理编码后的特征
+                lstm_output, _ = self.bilstm(x)
+                lstm_output = self.lstm_proj(lstm_output)
+                x = self.layer_norm(lstm_output + x)
+                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
+            else:
+                x = x
 
         # 使用线性层处理特征
         x = self.ffn(x)  # x.shape: [batch_size, seq_length, hidden_size]
