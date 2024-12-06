@@ -172,23 +172,23 @@ class TextModel(nn.Module):
         self.loss = CustomLoss(alpha, gamma, weights, ce_reduction, focal_reduction, loss_type)
 
     def forward(self, input_ids, labels=None):
-        print('input shape:',input_ids.shape)
+        # print('input shape:',input_ids.shape)
         # 使用 AutoModel 进行编码
         if self.pooling_mode == 'cls':
             x = self.encoder(input_ids).last_hidden_state[:, -1, :]  # x.shape: [batch_size, hidden_size]
         else:
             x = self.encoder(input_ids).last_hidden_state  # x.shape: [batch_size, seq_length, hidden_size]
-        print('encoder shape:',x.shape)
+        # print('encoder shape:',x.shape)
 
         # 根据 output_block 参数选择输出
         if self.output_block == 'BiLSTM':
             # 使用 BiLSTM 处理编码后的特征
             lstm_output, _ = self.bilstm(x)
-            print('bilstm middle shape:',lstm_output.shape)
+            # print('bilstm middle shape:',lstm_output.shape)
             lstm_output = self.lstm_proj(lstm_output)
-            print('bilstm output shape:',lstm_output.shape)
+            # print('bilstm output shape:',lstm_output.shape)
             x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-            print('bilstm+layer_norm output shape:',x.shape)
+            # print('bilstm+layer_norm output shape:',x.shape)
         elif self.output_block == 'Transformer':
             # 使用 Transformer 处理编码后的特征
             x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
@@ -212,22 +212,22 @@ class TextModel(nn.Module):
 
         # 使用线性层处理特征
         x = self.ffn(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        print('ffn output shape:',x.shape)
+        # print('ffn output shape:',x.shape)
 
         if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
             # 使用池化层处理特征
             x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
-            print('pooling output shape:',x.shape)
+            # print('pooling output shape:',x.shape)
         elif self.pooling_mode != 'cls':
             raise ValueError("Invalid pooling mode: {}".format(self.pooling))
 
         # 使用分类器层进行分类
         logits = self.classify(x)
-        print('classify output shape:',logits.shape)
+        # print('classify output shape:',logits.shape)
 
         # 如果有标签，计算损失
         if labels is not None:
-            print(logits.shape,labels.shape)
+            # print(logits.shape,labels.shape)
             loss = self.loss(logits, labels)
             return loss
         else:

@@ -2,8 +2,11 @@ config = {
     "model_path": "./Qwen2.5-1.5B",
 
     # loader config：
-    "data_path": "./train/train_text.json",
-    "batch_size": 2,
+    "train_text_path": "./train/train_text.json",
+    "valid_text_path": "./train/valid_text.json",
+    "train_image_path": "./train/train_image.json",
+    "valid_image_path": "./train/valid_image.json",
+    "batch_size": 25,
     "input_text_save": 'user+',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
     "max_length_map": {'user-': 36,
                        'user+': 128,
@@ -11,7 +14,7 @@ config = {
                        'user+customer-': 324},
 
     # model config:
-    "output_block": 'BiLSTM',  # 'BiLSTM' or 'Transformer' or 'TransformerEncoder' or 'BiLSTM+Transformer' or 'BiLSTM+TransformerEncoder'
+    "output_block": 'BiLSTM+Transformer',  # 'BiLSTM' or 'Transformer' or 'TransformerEncoder' or 'BiLSTM+Transformer' or 'BiLSTM+TransformerEncoder'
     "pooling_mode": 'concat',  # 'mean' or 'max' or 'cls' or 'concat'
 
     # Loss config：
@@ -20,6 +23,13 @@ config = {
     "ce_reduction": 'mean',  # 'mean' or 'sum' or 'none'
     "focal_reduction": 'mean',  # 'mean' or 'sum' or 'none'
     "loss_type": 'ce',  # 'ce' or 'focal'
+
+    # Train config：
+    "epochs": 20,
+    "lr_scheduler": True,
+    "patience": 5,
+    "learning_rate": 1e-4,
+    "optimizer": 'adam',
 
     "label_map": {'商品材质': 0,
                   '商品规格': 1,
