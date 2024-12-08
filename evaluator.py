@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from loader import load_data
 import os
 import random
-
+from qwen_vl_utils import process_vision_info
 
 """
 模型效果测试
@@ -125,7 +125,6 @@ class ImageEvaluator:
         self.device = self.model.device
         self.res = []
 
-
     def eval_QWEN_VL(self, data_iter):
         step = 0
         for sample in data_iter:
@@ -147,6 +146,64 @@ class ImageEvaluator:
             if step > 0 and step % 20 == 0:
                 print("Current Acc: ", len([1 for i in self.res if i["TorF"]]) / len(self.res))
             step += 1
+
+    def eval_QWEN2_VL(self, data_iter):
+        step = 0
+        for sample in data_iter:
+            image_id = sample["image_id"][0]
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": os.path.join("train/images", image_id),
+                        },
+                        {"type": "text", "text": self.config["image_task_prompt"]},
+                    ],
+                }
+            ]
+
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            image_inputs, video_inputs = process_vision_info(messages)
+            inputs = self.tokenizer(
+                text=[text],
+                images=image_inputs,
+                padding=True,
+                return_tensors="pt",
+            )
+            inputs = inputs.to(self.device)
+            generated_ids = self.model.generate(**inputs, max_new_tokens=32)
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            ]
+            output_text = self.tokenizer.batch_decode(
+                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            response_label = self.find_first_substring(output_text[0])
+
+            res = {"image_id": image_id, "response": output_text, "response_label": response_label, "true_label": sample["label"][0]}
+            # print(output_text, response_label, sample["label"][0])
+            self.res.append(res)
+            if step > 0 and step % 20 == 0:
+                self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j["response_label"] == j["true_label"]]) / len(self.res)}")
+            step += 1
+            if step == 400:
+                break
+
+        self.logger.info("各类别准确率:")
+        for label in self.config["image_labels"]:
+            count_total = 0
+            count_true = 0
+            for res in self.res:
+                if res["true_label"] == label:
+                    count_total += 1
+                    if res["response_label"] == label:
+                        count_true += 1
+            self.logger.info(f"{label}有{count_total}个，预测准确率：{count_true/count_total*100}%")
+
 
 
     def find_first_substring(self, main_string):

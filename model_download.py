@@ -15,3 +15,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 #
 # model.save_pretrained("./Qwen-VL-Int4")
 # tokenizer.save_pretrained("./Qwen-VL-Int4")
+
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from qwen_vl_utils import process_vision_info
+
+
+model = Qwen2VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2-VL-2B-Instruct", torch_dtype="auto", device_map="auto"
+)
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-2B-Instruct")
+
+model.save_pretrained("./Qwen2-VL-2B")
+processor.save_pretrained("./Qwen2-VL-2B")
