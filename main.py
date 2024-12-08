@@ -10,7 +10,7 @@ from evaluator import TextEvaluator
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # 创建一个日志文件名（你可以根据需要自定义文件名）
-log_file = 'log/log_text_pooling_mode.log'
+log_file = 'log/log_text_block&textsave&loss.log'
 
 # 配置日志，输出到控制台和文件
 logging.basicConfig(level=logging.INFO,
@@ -103,7 +103,7 @@ def Text_Train(config, model_title):
             logger.info(f"No significant improvement for {no_improve_epochs} epochs")
 
         # 如果连续几个 epoch 没有显著改进，则停止训练
-        if no_improve_epochs >= patience and epoch >= 10:
+        if no_improve_epochs >= patience and epoch >= 15:
             logger.info(f"Early stopping triggered at epoch {epoch}")
             break
 
@@ -111,14 +111,40 @@ def Text_Train(config, model_title):
 
 if __name__ == '__main__':
     outputs = []
-    for pooling_mode in [''
-                         '', 'max', 'cls', 'concat']:
-        config['pooling_mode'] = pooling_mode
-        model_title = f"{config['output_block']}_{config['pooling_mode']}"
-        _, _, micro_f1s = Text_Train(config, model_title)
-        output = {'model': model_title, 'micro_f1s': micro_f1s}
-        outputs.append(output)
+    for output_block in ['BiLSTM', 'BiLSTM+Transformer', 'BiLSTM+TransformerEncoder']:
+        config['output_block'] = output_block
+        for input_text_save in ['user-', 'user+', 'user-customer-', 'user+customer-']:
+            config['input_text_save'] = input_text_save
+            for batch_size in [3, 6, 12, 24, 36]:
+                config['batch_size'] = batch_size
+                for loss_type in ['focal', 'ce']:
+                    config['loss_type'] = loss_type
+
+                    if loss_type == 'focal':
+                        for ce_reduction in ['none', 'mean', 'sum'] :
+                            config['ce_reduction'] = ce_reduction
+                            for focal_reduction in ['mean', 'sum']:
+                                config['focal_reduction'] = focal_reduction
+
+                                model_title = f"{config['output_block']}_{config['input_text_save']}_{loss_type}_{ce_reduction}_{focal_reduction}_{batch_size}"
+                                _, _, micro_f1s = Text_Train(config, model_title)
+                                output = {'model': output_block, 'input_text_save': input_text_save,
+                                          'loss_type': loss_type, 'batch_size':batch_size,
+                                          'ce_reduction':ce_reduction,'focal_reduction':focal_reduction,'micro_f1s': micro_f1s}
+                                outputs.append(output)
+
+                    else:
+                        for ce_reduction in ['mean', 'sum']:
+                            config['ce_reduction'] = ce_reduction
+                            model_title = f"{config['output_block']}_{config['input_text_save']}_{loss_type}_{ce_reduction}_{'NA'}_{batch_size}"
+                            _, _, micro_f1s = Text_Train(config, model_title)
+                            output = {'model': output_block, 'input_text_save': input_text_save,
+                                      'loss_type': loss_type, 'batch_size': batch_size,
+                                      'ce_reduction': ce_reduction, 'focal_reduction': 'NA',
+                                      'micro_f1s': micro_f1s}
+                            outputs.append(output)
+
 
     output_data = pd.DataFrame(outputs)
-    save_path = "log/table_pooling_mode.csv"
+    save_path = "log/table_block&textsave&loss.csv"
     output_data.to_csv(save_path, index=False)

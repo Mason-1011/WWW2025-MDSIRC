@@ -16,7 +16,7 @@ config = {
 
     # model config:
     "output_block": 'BiLSTM+Transformer',  # 'BiLSTM' or 'Transformer' or 'TransformerEncoder' or 'BiLSTM+Transformer' or 'BiLSTM+TransformerEncoder'
-    "pooling_mode": 'concat',  # 'mean' or 'max' or 'cls' or 'concat'
+    "pooling_mode": 'max',  # 'mean' or 'max' or 'cls' or 'concat'
 
     # Loss config：
     "alpha": 1,

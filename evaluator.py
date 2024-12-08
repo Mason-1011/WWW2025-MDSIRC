@@ -20,7 +20,7 @@ class TextEvaluator:
         self.map = {v: k for k, v in config['label_map'].items()}
 
         
-        self.valid_data = load_data(path = config["valid_text_path"], config=config, task_type='text', shuffle=False)
+        self.valid_data = load_data(path = './train/all_text.json', config=config, task_type='text', shuffle=False)
         self.all_true_labels = []  # 用于存储所有真实标签
         self.all_pred_labels = []  # 用于存储所有预测标签
         self.wrong_ids = []  # 用于存储错误预测的样本 ID

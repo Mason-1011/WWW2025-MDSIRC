@@ -207,6 +207,18 @@ class TextModel(nn.Module):
                 lstm_output = self.lstm_proj(lstm_output)
                 x = self.layer_norm(lstm_output + x)
                 x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
+            elif self.output_block == 'Transformer+BiLSTM':
+                # 使用 Transformer 和 BiLSTM 处理编码后的特征
+                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
+                lstm_output, _ = self.bilstm(x)
+                lstm_output = self.lstm_proj(lstm_output)
+                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
+            elif self.output_block == 'TransformerEncoder+BiLSTM':
+                # 使用 TransformerEncoder 和 BiLSTM 处理编码后的特征
+                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
+                lstm_output, _ = self.bilstm(x)
+                lstm_output = self.lstm_proj(lstm_output)
+                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
             else:
                 x = x
 
