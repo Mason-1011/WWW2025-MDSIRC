@@ -6,6 +6,8 @@ import re
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer
 from itertools import permutations
+from torchvision import transforms
+from PIL import Image
 
 
 def load_data(config, task_type, path, shuffle=False):
@@ -100,8 +102,49 @@ def design_input_text(user_messages, customer_messages, save='user+'):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, config):
+    def __init__(self, path, config):
         self.config = config
+        self.path = path
+        self.data = []
+
+    def load(self):
+        try:
+            with open(self.path, 'r', encoding='utf-8') as file:
+                data_read = json.load(file)
+
+        except FileNotFoundError:
+            print(f"Error: The file at {self.path} was not found.")
+        except json.JSONDecodeError:
+            print("Error: The file is not a valid JSON file.")
+
+        for sample in data_read:
+            if sample["instruction"].startswith('Picture'):
+                data_point = {"id": sample["id"]}
+                data_point["label"] = sample["output"]
+                data_point["image_id"] = sample["image"][0]
+                data_point["image"] = self.load_image(sample["image"][0])
+                self.data.append(data_point)
+
+    @staticmethod
+    def load_image(image_id):
+        image_path = os.path.join('train/images', image_id)
+
+        with Image.open(image_path) as img:
+            img = img.convert('RGB')
+
+            # 创建一个变换，将 PIL 图像转换为 PyTorch 张量
+            transform = transforms.Compose([
+                transforms.ToTensor(),  # 这个变换会将 [0, 255] 的值缩放到 [0.0, 1.0]
+            ])
+
+            tensor = transform(img)
+        return tensor
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
 
 
 if __name__ == '__main__':
