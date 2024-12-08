@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from collections import defaultdict, deque
 from loader import load_data
+import os
+import random
+
 
 """
 模型效果测试
@@ -111,6 +114,49 @@ def evalate_trained_model(model_path = None):
 
     evaluator = TextEvaluator(config, model, logger)
     evaluator.eval(20)
+
+
+class ImageEvaluator:
+    def __init__(self, config, model, tokenizer, logger = None):
+        self.config = config
+        self.model = model
+        self.tokenizer = tokenizer
+        self.logger = logger
+        self.device = self.model.device
+        self.res = []
+
+
+    def eval_QWEN_VL(self, data_iter):
+        step = 0
+        for sample in data_iter:
+            image_id = sample["image_id"][0]
+            query = self.tokenizer.from_list_format([
+                {'image': os.path.join("train/images", image_id)},
+                {'text': self.config["image_task_prompt"]},
+                # {'text': "请用中文简略描述图中的内容:"},
+            ])
+            # inputs = tokenizer(query, return_tensors='pt')
+            # inputs = inputs.to(device)
+            # pred = model.generate(**inputs)
+            # response = tokenizer.decode(pred.cpu()[0], skip_special_tokens=True)
+            response, history = self.model.chat(self.tokenizer, query=query, history=None)
+            response_label = self.find_first_substring(response)
+
+            res = {"image_id": image_id, "response": response, "TorF": response_label == sample["label"][0]}
+            self.res.append(res)
+            if step > 0 and step % 20 == 0:
+                print("Current Acc: ", len([1 for i in self.res if i["TorF"]]) / len(self.res))
+            step += 1
+
+
+    def find_first_substring(self, main_string):
+        substrings = self.config["image_labels"]
+        for substring in substrings:
+            if substring in main_string:
+                return substring
+        return random.choice(substrings)
+
+
 
 
 if __name__ == "__main__":

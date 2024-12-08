@@ -16,11 +16,12 @@ def load_data(config, task_type, path, shuffle=False):
     """
     if task_type == 'text':
         dataset = TextDataset(path, config)
+        dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=shuffle)
     elif task_type == 'image':
         dataset = ImageDataset(path, config)
+        dataloader = DataLoader(dataset, batch_size=config["batch_size_image"], shuffle=shuffle)
     else:
         raise ValueError("Invalid dataset type: {}".format(task_type))
-    dataloader = DataLoader(dataset, batch_size=config["batch_size"], shuffle=shuffle)
     return dataloader
 
 
@@ -102,10 +103,12 @@ def design_input_text(user_messages, customer_messages, save='user+'):
 
 
 class ImageDataset(Dataset):
-    def __init__(self, path, config):
+    def __init__(self, path, config, image_tensor = False):
         self.config = config
         self.path = path
         self.data = []
+        self.image_tensor = image_tensor
+        self.load()
 
     def load(self):
         try:
@@ -122,7 +125,8 @@ class ImageDataset(Dataset):
                 data_point = {"id": sample["id"]}
                 data_point["label"] = sample["output"]
                 data_point["image_id"] = sample["image"][0]
-                data_point["image"] = self.load_image(sample["image"][0])
+                if self.image_tensor:
+                    data_point["image"] = self.load_image(sample["image"][0])
                 self.data.append(data_point)
 
     @staticmethod

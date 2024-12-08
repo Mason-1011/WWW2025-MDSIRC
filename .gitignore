@@ -9,6 +9,7 @@
 
 # model
 /Qwen2.5-1.5B/
+/Qwen-VL-Int4/
 
 InteractiveViewer.py
 
