@@ -1,10 +1,12 @@
 from config import config
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from evaluator import ImageEvaluator
 from loader import load_data
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 import torch
 import logging
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from model import ImageModel, choose_optimizer
+import os
+import glob
 
 def eval_origin_model(logger):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,17 +31,99 @@ def eval_origin_model(logger):
     data_iter = load_data(config, "image", "train/train.json")
     image_classify_qwenvl.eval_QWEN2_VL(data_iter)
 
+def save_checkpoint(model, optimizer, epoch, save_dir, max_checkpoints=5, interval=10):
+    """保存模型断点，支持数量上限管理和永久保存"""
+    # 创建保存目录
+    os.makedirs(save_dir, exist_ok=True)
+
+    # 保存文件路径
+    checkpoint_path = os.path.join(save_dir, f"checkpoint_epoch_{epoch}.pth")
+    state = {
+        "model_state": {
+            k: v for k, v in model.state_dict().items() if "encoder" not in k and "processor" not in k
+        },
+        "optimizer_state": optimizer.state_dict(),
+        "epoch": epoch,
+    }
+    torch.save(state, checkpoint_path)
+    print(f"Checkpoint saved for epoch {epoch} at {checkpoint_path}")
+
+    # 保留永久保存的模型（如每10个epoch）
+    if epoch % interval == 0:
+        print(f"Permanent checkpoint saved for epoch {epoch}")
+        return
+
+    # 管理普通断点数量，删除多余的
+    all_checkpoints = sorted(glob.glob(os.path.join(save_dir, "checkpoint_epoch_*.pth")), key=os.path.getmtime)
+    normal_checkpoints = [ckpt for ckpt in all_checkpoints if f"checkpoint_epoch_{interval}" not in ckpt]
+
+    if len(normal_checkpoints) > max_checkpoints:
+        oldest_checkpoint = normal_checkpoints[0]
+        os.remove(oldest_checkpoint)
+        print(f"Removed oldest checkpoint: {oldest_checkpoint}")
+
+def load_checkpoint(model, optimizer, save_dir):
+    """加载最新模型断点"""
+    all_checkpoints = sorted(glob.glob(os.path.join(save_dir, "checkpoint_epoch_*.pth")), key=os.path.getmtime)
+    if not all_checkpoints:
+        print("No checkpoints found, starting training from scratch.")
+        return 0
+
+    latest_checkpoint = all_checkpoints[-1]
+    checkpoint = torch.load(latest_checkpoint, map_location="cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(
+        {k: v for k, v in checkpoint["model_state"].items() if k in model.state_dict()}
+    )
+    optimizer.load_state_dict(checkpoint["optimizer_state"])
+    print(f"Checkpoint loaded from {latest_checkpoint} at epoch {checkpoint['epoch']}")
+    return checkpoint["epoch"]
+
+def train_Qwen2(config, logger, epochs = 40, save_dir="/root/autodl-tmp/WWW2025-MDSIRC/checkpoints", max_checkpoints=5, interval=10):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("使用设备：", device)
+
+    model = ImageModel(config).to(device).to(dtype=torch.bfloat16)
+    data_iter_train = load_data(config, "image", "/root/autodl-tmp/WWW2025-MDSIRC/train/train_image.json")
+    data_iter_valid = load_data(config, "image", "/root/autodl-tmp/WWW2025-MDSIRC/train/valid_image.json")
+
+    # 加载优化器
+    optimizer = choose_optimizer(config, model)
+
+    evaluator = ImageEvaluator(config, model, logger = logger)
+
+    # 加载断点
+    start_epoch = load_checkpoint(model, optimizer, save_dir)
+
+    model.train()
+    for epoch in range(start_epoch, epochs):
+        steps = 0
+        for sample in data_iter_train:
+            label = [config["image_label_map"][i] for i in sample["label"]]
+            output_id = torch.tensor(label).to(device)
+            loss, logits = model(sample, output_id)
+            loss.backward()
+            optimizer.step()
+
+            if steps % 350 == 0 and steps > 0:
+                logger.info(f"训练损失: {loss}")
+                evaluator.eval_Qwen2_VL_classify_block(data_iter_valid)
+            steps += len(sample["label"])
+
+        # 保存断点
+        save_checkpoint(model, optimizer, epoch + 1, save_dir, max_checkpoints, interval)
+
 
 if __name__ == "__main__":
     # 创建一个日志文件名（你可以根据需要自定义文件名）
-    log_file = 'log/log_eval_Qwen2-VL-Int4.log'
+    log_file = '/root/autodl-tmp/WWW2025-MDSIRC/log/log_eval_Qwen2-VL.log'
 
     # 配置日志，输出到控制台和文件
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                         handlers=[
                             logging.StreamHandler(),  # 输出到控制台
-                            logging.FileHandler(log_file, mode='a', encoding='utf-8')  # 输出到文件，追加模式
+                            logging.FileHandler(log_file, mode='a', encoding='utf-8', delay=True)  # 输出到文件，追加模式
                         ])
     logger = logging.getLogger(__name__)
-    eval_origin_model(logger) # 不进行任何微调，准确度约为0.4
+    # eval_origin_model(logger) # 不进行任何微调，准确度约为0.4
+    train_Qwen2(config, logger)

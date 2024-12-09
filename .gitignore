@@ -10,10 +10,12 @@
 # model
 /Qwen2.5-1.5B/
 /Qwen-VL-Int4/
+/Qwen2-VL-2B/
 
 InteractiveViewer.py
 
 /AutoGPTQ
 
 /log/
+/checkpoints/
 

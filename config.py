@@ -1,5 +1,6 @@
 config = {
     "model_path": "./Qwen2.5-1.5B",
+    "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B",
 
     # loader config：
     "train_text_path": "./train/train_text.json",
@@ -7,7 +8,7 @@ config = {
     "train_image_path": "./train/train_image.json",
     "valid_image_path": "./train/valid_image.json",
     "batch_size": 16,
-    "batch_size_image": 1,
+    "batch_size_image": 2,
     "input_text_save": 'user+',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
     "max_length_map": {'user-': 36,
                        'user+': 128,
@@ -17,6 +18,9 @@ config = {
     # model config:
     "output_block": 'BiLSTM+Transformer',  # 'BiLSTM' or 'Transformer' or 'TransformerEncoder' or 'BiLSTM+Transformer' or 'BiLSTM+TransformerEncoder'
     "pooling_mode": 'max',  # 'mean' or 'max' or 'cls' or 'concat'
+
+    # Image model config
+    "hidden_size_image": 1536,
 
     # Loss config：
     "alpha": 1,
@@ -63,5 +67,30 @@ config = {
         "image_labels": ["实物拍摄(含售后)","商品分类选项","商品头图","商品详情页截图","下单过程中出现异常（显示购买失败浮窗）",
                          "订单详情页面","支付页面","评论区截图页面","物流页面-物流列表页面","物流页面-物流跟踪页面","物流页面-物流异常页面",
                          "退款页面","退货页面","换货页面","购物车页面","店铺页面","活动页面","优惠券领取页面","账单/账户页面", "投诉举报页面",
-                         "平台介入页面","外部APP截图","其他类别图片"]
+                         "平台介入页面","外部APP截图","其他类别图片"],
+        "image_label_map" :{
+                    "实物拍摄(含售后)": 0,
+                    "商品分类选项": 1,
+                    "商品头图": 2,
+                    "商品详情页截图": 3,
+                    "下单过程中出现异常（显示购买失败浮窗）": 4,
+                    "订单详情页面": 5,
+                    "支付页面": 6,
+                    "评论区截图页面": 7,
+                    "物流页面-物流列表页面": 8,
+                    "物流页面-物流跟踪页面": 9,
+                    "物流页面-物流异常页面": 10,
+                    "退款页面": 11,
+                    "退货页面": 12,
+                    "换货页面": 13,
+                    "购物车页面": 14,
+                    "店铺页面": 15,
+                    "活动页面": 16,
+                    "优惠券领取页面": 17,
+                    "账单/账户页面": 18,
+                    "投诉举报页面": 19,
+                    "平台介入页面": 20,
+                    "外部APP截图": 21,
+                    "其他类别图片": 22
+        }
 }

@@ -6,7 +6,6 @@ from loader import load_data
 import os
 import random
 from qwen_vl_utils import process_vision_info
-
 """
 模型效果测试
 """
@@ -117,12 +116,12 @@ def evalate_trained_model(model_path = None):
 
 
 class ImageEvaluator:
-    def __init__(self, config, model, tokenizer, logger = None):
+    def __init__(self, config, model, tokenizer = None, logger = None):
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
         self.logger = logger
-        self.device = self.model.device
+        self.device = self.model.encoder.device
         self.res = []
 
     def eval_QWEN_VL(self, data_iter):
@@ -185,7 +184,7 @@ class ImageEvaluator:
             response_label = self.find_first_substring(output_text[0])
 
             res = {"image_id": image_id, "response": output_text, "response_label": response_label, "true_label": sample["label"][0]}
-            # print(output_text, response_label, sample["label"][0])
+            print(output_text, response_label, sample["label"][0])
             self.res.append(res)
             if step > 0 and step % 20 == 0:
                 self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j["response_label"] == j["true_label"]]) / len(self.res)}")
@@ -204,7 +203,36 @@ class ImageEvaluator:
                         count_true += 1
             self.logger.info(f"{label}有{count_total}个，预测准确率：{count_true/count_total*100}%")
 
+    def eval_Qwen2_VL_classify_block(self, data_iter):
+        self.model.eval()
+        total_loss = 0
+        total_each_label = [0] * len(self.config["image_labels"])
+        correct_each_label = [0] * len(self.config["image_labels"])
+        num_batches = 0
+        for sample in data_iter:
+            labels = [self.config["image_label_map"][i] for i in sample["label"]]
+            output_id = torch.tensor(labels).to(self.device)
+            loss, logits = self.model(sample, output_id)
+            total_loss += loss.item()
+            num_batches += 1
 
+            for label in labels:
+                total_each_label[label] += 1
+
+            _, predicted_labels = torch.max(logits, dim=1)
+
+            for pred, true in zip(predicted_labels.cpu().numpy(), labels):  # 将张量移到CPU并转换为numpy数组以便索引
+                if pred == true:
+                    correct_each_label[true] += 1
+
+        avg_loss = total_loss / num_batches if num_batches > 0 else float('inf')
+        self.logger.info(f"评估平均损失: {avg_loss}")
+        self.logger.info(f"评估总体准确度: {sum(correct_each_label) / sum(total_each_label)*100:.2f}%")
+        for i, (correct, total) in enumerate(zip(correct_each_label, total_each_label)):
+            accuracy = (correct / total) * 100 if total != 0 else 0
+            self.logger.info(f"{self.config['image_labels'][i]} 有{total}个，预测准确率: {accuracy:.2f}%")
+
+        self.model.train()
 
     def find_first_substring(self, main_string):
         substrings = self.config["image_labels"]

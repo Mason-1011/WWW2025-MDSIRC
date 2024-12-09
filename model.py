@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam, SGD
 from transformers import AutoModel
+import os
+from qwen_vl_utils import process_vision_info
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 
 
 class CustomLoss(nn.Module):
@@ -245,6 +248,8 @@ class TextModel(nn.Module):
         else:
             return logits
 
+
+
 def choose_optimizer(config, model):
     optimizer = config["optimizer"]
     learning_rate = config["learning_rate"]
@@ -253,6 +258,112 @@ def choose_optimizer(config, model):
         return Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
     elif optimizer == "sgd":
         return SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
+
+
+
+
+class ImageModel(nn.Module):
+    def __init__(self, config, dtype = torch.bfloat16):
+        super(ImageModel, self).__init__()
+
+        self.dtype = dtype
+        self.config = config
+        self.pooling_mode = config["pooling_mode"]
+        self.class_num = len(config["image_labels"])
+
+        hidden_size = config["hidden_size_image"]
+        # 线性层
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 3),
+            nn.ReLU(),
+            nn.Linear(hidden_size * 3, hidden_size),
+        )
+        # 池化层
+        self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
+        # 分类器层
+        self.classify = nn.Linear(hidden_size, self.class_num)
+        self.encoder = None
+        self.processor = None
+        self.load_pretrained_model()
+
+        alpha = config['alpha']
+        gamma = config['gamma']
+        ce_reduction = config['ce_reduction']
+        focal_reduction = config['focal_reduction']
+        loss_type = config['loss_type']
+        # 损失函数
+        self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
+
+
+    def load_pretrained_model(self):
+        model_name = self.config["model_path_image"]
+        self.encoder = Qwen2VLForConditionalGeneration.from_pretrained(
+            model_name, torch_dtype="auto", device_map="auto", output_hidden_states=True
+        ).eval()
+        # 冻结预训练模型的参数
+        for name, param in self.encoder.named_parameters():
+            param.requires_grad = False
+        min_pixels = 256 * 28 * 28
+        max_pixels = 1280 * 28 * 28
+        self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
+
+    def encoder_Qwen2_VL(self, config, image_ids):
+        messages = []
+        for image_id in image_ids:
+            message = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": os.path.join("train/images", image_id),
+                        },
+                        {"type": "text", "text": "Hello, describe this picture"},
+                    ],
+                }
+            ]
+            messages.append(message)
+        texts = [
+            self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
+            for msg in messages
+        ]
+
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.processor(
+            text=texts,
+            images=image_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to(self.encoder.device)
+
+        encoded = self.encoder(**inputs)
+        # 检查输出对象中的隐藏状态
+        hidden_states = encoded.hidden_states  # 这是一个 tuple，每一层的输出为一个张量
+        last_hidden_state = hidden_states[-1]
+        return last_hidden_state
+
+    def forward(self, inputs, labels=None):
+        last_hidden_state = self.encoder_Qwen2_VL(self.config, inputs["image_id"])
+        # 使用线性层处理特征
+        x = self.ffn(last_hidden_state)  # x.shape: [batch_size, seq_length, hidden_size]
+
+        if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
+            # 使用池化层处理特征
+            x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
+            # print('pooling output shape:',x.shape)
+        elif self.pooling_mode != 'cls':
+            raise ValueError("Invalid pooling mode: {}".format(self.pooling))
+
+        # 使用分类器层进行分类
+        logits = self.classify(x)
+        # 如果有标签，计算损失
+        if labels is not None:
+            # print(logits.shape,labels.shape)
+            loss = self.loss(logits, labels)
+            return loss, logits
+        else:
+            return logits
 
 
 if __name__ == '__main__':
@@ -267,4 +378,3 @@ if __name__ == '__main__':
         id, input_ids, labels = batch_data
         loss = model(input_ids, labels)
         print(loss)
-
