@@ -160,5 +160,6 @@ if __name__ == '__main__':
     from Viewer import Viewer, InteractiveViewer
     viewer = Viewer()
     viewer.load_data_from_json(data.dataset.json_data)
+    # print(data.dataset.json_data)
     app = InteractiveViewer(viewer)
     app.mainloop()

@@ -18,14 +18,14 @@ class TextEvaluator:
         self.logger = logger
         self.map = {v: k for k, v in config['label_map'].items()}
 
-        
-        self.valid_data = load_data(path = './train/all_text.json', config=config, task_type='text', shuffle=False)
+        self.valid_data = load_data(path='./train/all_text.json', config=config, task_type='text', shuffle=False)
         self.all_true_labels = []  # 用于存储所有真实标签
         self.all_pred_labels = []  # 用于存储所有预测标签
         self.wrong_ids = []  # 用于存储错误预测的样本 ID
 
     def load_dict(self):
         self.stats_dict = {v: defaultdict(int) for k, v in self.map.items()}
+        self.result = {}
 
     def eval(self, epoch):
         self.model.eval()
@@ -41,11 +41,16 @@ class TextEvaluator:
                 pred_results = self.model(input_ids)  # 不输入 labels，预测
             self.write_stats(id, output_id, pred_results)
 
+        for item in self.valid_data.dataset.json_data:
+            item_id = item['id']
+            if item_id in self.result:
+                item['predicted'] = self.result[item_id]
+
         # 计算并返回准确率和 F1 分数
         f1 = self.show_stats()
         return f1
 
-    def write_stats(self, id, labels, pred_results):
+    def write_stats(self, ids, labels, pred_results):
         """
         用于比较模型的预测结果与真实标签，并记录正确和错误的预测数量。
         - 使用 torch.argmax() 获取模型预测的分类结果（即最大值对应的分类标签）。
@@ -62,17 +67,18 @@ class TextEvaluator:
         self.all_true_labels.extend(true_labels)
         self.all_pred_labels.extend(pred_labels)
 
+
         assert len(labels) == len(pred_results)
-        for true_label, pred_label in zip(true_labels, pred_labels):
+        for id, true_label, pred_label in zip(ids, true_labels, pred_labels):
             # print(true_label,pred_label)
             self.stats_dict[self.map[true_label]]['真实数数'] += 1
             self.stats_dict[self.map[pred_label]]['预测数'] += 1
+            self.result[id] = self.map[pred_label]
             if int(true_label) == int(pred_label):
                 self.stats_dict[self.map[true_label]]['正确预测数'] += 1
             else:
                 self.wrong_ids.append(id)
         return
-
 
     def show_stats(self):
         F1_scores = []
@@ -81,7 +87,8 @@ class TextEvaluator:
             recall = self.stats_dict[key]["正确预测数"] / (1e-5 + self.stats_dict[key]["真实数数"])
             F1 = (2 * precision * recall) / (precision + recall + 1e-5)
             F1_scores.append(F1)
-            self.logger.info("%s，真实数量：%i,预测出数量：%i,准确率：%f, 召回率: %f, F1: %f" % (key, self.stats_dict[key]["真实数数"],self.stats_dict[key]["预测数"],precision, recall, F1))
+            self.logger.info("%s，真实数量：%i,预测出数量：%i,准确率：%f, 召回率: %f, F1: %f" % (
+            key, self.stats_dict[key]["真实数数"], self.stats_dict[key]["预测数"], precision, recall, F1))
         self.logger.info("Macro-F1: %f" % np.mean(F1_scores))
         correct_pred = sum([self.stats_dict[key]["正确预测数"] for key in self.stats_dict.keys()])
         total_pred = sum([self.stats_dict[key]["预测数"] for key in self.stats_dict.keys()])
@@ -94,14 +101,14 @@ class TextEvaluator:
         return micro_f1
 
 
-
-
-def evalate_trained_model(model_path = None):
+def evalate_trained_model(model_path=None):
     from model import TextModel
     from config import config
     import logging
+    from Viewer import Viewer, InteractiveViewer
 
     model = TextModel(config)
+    model.load_state_dict(torch.load('./TextModel',map_location=torch.device('cpu')))
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
@@ -112,7 +119,14 @@ def evalate_trained_model(model_path = None):
         model = model.cuda()
 
     evaluator = TextEvaluator(config, model, logger)
-    evaluator.eval(20)
+    evaluator.eval(0)
+
+    viewer = Viewer()
+    viewer.load_data_from_json(evaluator.valid_data.dataset.json_data)
+    app = InteractiveViewer(viewer)
+    app.mainloop()
+
+
 
 
 class ImageEvaluator:
