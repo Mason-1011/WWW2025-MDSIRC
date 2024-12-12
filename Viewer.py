@@ -252,9 +252,12 @@ if __name__ == "__main__":
     # 使用示例
     # 初始化 Viewer 类并传入多个 JSON 文件路径
     viewer = Viewer() # 请替换为你的 JSON 文件路径列表
-    viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
+    # viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
     # 调用方法显示某个产品的信息和图片
     # viewer.display_sample_info("9b24d96f-2961-41ba-8113-e82f1522869f-12275",['id','output'],show_image=True)
+    with open('result/viewer_json.json', 'r') as f:
+        data = json.load(f)
+    viewer.load_data_from_json(data, images_dir='test1/images')
 
     # 启动交互式窗口
     app = InteractiveViewer(viewer)
