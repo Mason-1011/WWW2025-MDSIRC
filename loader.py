@@ -56,7 +56,8 @@ class TextDataset(Dataset):
         sample['input_text'] = design_input_text(sample['user_messages'], sample['customer_messages'], save)
         sample['input_ids'] = self.tokenizer.encode(sample['input_text'], truncation=True, padding='max_length',
                                                     max_length=self.max_length_map[save])
-        sample['output_id'] = self.label_map[sample['output']]
+
+        sample['output_id'] = self.label_map[sample['output']] if 'output' in sample else -1
 
     def append_data(self, sample):
         input_ids = torch.tensor(sample['input_ids'])
@@ -153,13 +154,13 @@ class ImageDataset(Dataset):
 
 if __name__ == '__main__':
     from config import config
-    data = load_data(config, task_type='text', path=config['train_text_path'])
+    data = load_data(config, task_type='text', path='./test1/test_text.json')
     # for batch in data:
     #     id,input,output = batch
     #     print(id,input,output)
     from Viewer import Viewer, InteractiveViewer
     viewer = Viewer()
-    viewer.load_data_from_json(data.dataset.json_data)
+    viewer.load_data_from_json(data.dataset.json_data, images_dir='./test1/images')
     # print(data.dataset.json_data)
     app = InteractiveViewer(viewer)
     app.mainloop()

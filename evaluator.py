@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from loader import load_data
 import os
 import random
-from qwen_vl_utils import process_vision_info
+# from qwen_vl_utils import process_vision_info
 """
 模型效果测试
 """
@@ -123,137 +123,138 @@ def evalate_trained_model(model_path=None):
 
     viewer = Viewer()
     viewer.load_data_from_json(evaluator.valid_data.dataset.json_data)
+    print(evaluator.wrong_ids)
     app = InteractiveViewer(viewer)
     app.mainloop()
 
 
 
 
-class ImageEvaluator:
-    def __init__(self, config, model, tokenizer = None, logger = None):
-        self.config = config
-        self.model = model
-        self.tokenizer = tokenizer
-        self.logger = logger
-        self.device = self.model.encoder.device
-        self.res = []
-
-    def eval_QWEN_VL(self, data_iter):
-        step = 0
-        for sample in data_iter:
-            image_id = sample["image_id"][0]
-            query = self.tokenizer.from_list_format([
-                {'image': os.path.join("train/images", image_id)},
-                {'text': self.config["image_task_prompt"]},
-                # {'text': "请用中文简略描述图中的内容:"},
-            ])
-            # inputs = tokenizer(query, return_tensors='pt')
-            # inputs = inputs.to(device)
-            # pred = model.generate(**inputs)
-            # response = tokenizer.decode(pred.cpu()[0], skip_special_tokens=True)
-            response, history = self.model.chat(self.tokenizer, query=query, history=None)
-            response_label = self.find_first_substring(response)
-
-            res = {"image_id": image_id, "response": response, "TorF": response_label == sample["label"][0]}
-            self.res.append(res)
-            if step > 0 and step % 20 == 0:
-                print("Current Acc: ", len([1 for i in self.res if i["TorF"]]) / len(self.res))
-            step += 1
-
-    def eval_QWEN2_VL(self, data_iter):
-        step = 0
-        for sample in data_iter:
-            image_id = sample["image_id"][0]
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "image": os.path.join("train/images", image_id),
-                        },
-                        {"type": "text", "text": self.config["image_task_prompt"]},
-                    ],
-                }
-            ]
-
-            text = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            image_inputs, video_inputs = process_vision_info(messages)
-            inputs = self.tokenizer(
-                text=[text],
-                images=image_inputs,
-                padding=True,
-                return_tensors="pt",
-            )
-            inputs = inputs.to(self.device)
-            generated_ids = self.model.generate(**inputs, max_new_tokens=32)
-            generated_ids_trimmed = [
-                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
-            output_text = self.tokenizer.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )
-            response_label = self.find_first_substring(output_text[0])
-
-            res = {"image_id": image_id, "response": output_text, "response_label": response_label, "true_label": sample["label"][0]}
-            print(output_text, response_label, sample["label"][0])
-            self.res.append(res)
-            if step > 0 and step % 20 == 0:
-                self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j["response_label"] == j["true_label"]]) / len(self.res)}")
-            step += 1
-            if step == 400:
-                break
-
-        self.logger.info("各类别准确率:")
-        for label in self.config["image_labels"]:
-            count_total = 0
-            count_true = 0
-            for res in self.res:
-                if res["true_label"] == label:
-                    count_total += 1
-                    if res["response_label"] == label:
-                        count_true += 1
-            self.logger.info(f"{label}有{count_total}个，预测准确率：{count_true/count_total*100}%")
-
-    def eval_Qwen2_VL_classify_block(self, data_iter):
-        self.model.eval()
-        total_loss = 0
-        total_each_label = [0] * len(self.config["image_labels"])
-        correct_each_label = [0] * len(self.config["image_labels"])
-        num_batches = 0
-        for sample in data_iter:
-            labels = [self.config["image_label_map"][i] for i in sample["label"]]
-            output_id = torch.tensor(labels).to(self.device)
-            loss, logits = self.model(sample, output_id)
-            total_loss += loss.item()
-            num_batches += 1
-
-            for label in labels:
-                total_each_label[label] += 1
-
-            _, predicted_labels = torch.max(logits, dim=1)
-
-            for pred, true in zip(predicted_labels.cpu().numpy(), labels):  # 将张量移到CPU并转换为numpy数组以便索引
-                if pred == true:
-                    correct_each_label[true] += 1
-
-        avg_loss = total_loss / num_batches if num_batches > 0 else float('inf')
-        self.logger.info(f"评估平均损失: {avg_loss}")
-        self.logger.info(f"评估总体准确度: {sum(correct_each_label) / sum(total_each_label)*100:.2f}%")
-        for i, (correct, total) in enumerate(zip(correct_each_label, total_each_label)):
-            accuracy = (correct / total) * 100 if total != 0 else 0
-            self.logger.info(f"{self.config['image_labels'][i]} 有{total}个，预测准确率: {accuracy:.2f}%")
-
-        self.model.train()
-
-    def find_first_substring(self, main_string):
-        substrings = self.config["image_labels"]
-        for substring in substrings:
-            if substring in main_string:
-                return substring
-        return random.choice(substrings)
+# class ImageEvaluator:
+#     def __init__(self, config, model, tokenizer = None, logger = None):
+#         self.config = config
+#         self.model = model
+#         self.tokenizer = tokenizer
+#         self.logger = logger
+#         self.device = self.model.encoder.device
+#         self.res = []
+#
+#     def eval_QWEN_VL(self, data_iter):
+#         step = 0
+#         for sample in data_iter:
+#             image_id = sample["image_id"][0]
+#             query = self.tokenizer.from_list_format([
+#                 {'image': os.path.join("train/images", image_id)},
+#                 {'text': self.config["image_task_prompt"]},
+#                 # {'text': "请用中文简略描述图中的内容:"},
+#             ])
+#             # inputs = tokenizer(query, return_tensors='pt')
+#             # inputs = inputs.to(device)
+#             # pred = model.generate(**inputs)
+#             # response = tokenizer.decode(pred.cpu()[0], skip_special_tokens=True)
+#             response, history = self.model.chat(self.tokenizer, query=query, history=None)
+#             response_label = self.find_first_substring(response)
+#
+#             res = {"image_id": image_id, "response": response, "TorF": response_label == sample["label"][0]}
+#             self.res.append(res)
+#             if step > 0 and step % 20 == 0:
+#                 print("Current Acc: ", len([1 for i in self.res if i["TorF"]]) / len(self.res))
+#             step += 1
+#
+#     def eval_QWEN2_VL(self, data_iter):
+#         step = 0
+#         for sample in data_iter:
+#             image_id = sample["image_id"][0]
+#             messages = [
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {
+#                             "type": "image",
+#                             "image": os.path.join("train/images", image_id),
+#                         },
+#                         {"type": "text", "text": self.config["image_task_prompt"]},
+#                     ],
+#                 }
+#             ]
+#
+#             text = self.tokenizer.apply_chat_template(
+#                 messages, tokenize=False, add_generation_prompt=True
+#             )
+#             image_inputs, video_inputs = process_vision_info(messages)
+#             inputs = self.tokenizer(
+#                 text=[text],
+#                 images=image_inputs,
+#                 padding=True,
+#                 return_tensors="pt",
+#             )
+#             inputs = inputs.to(self.device)
+#             generated_ids = self.model.generate(**inputs, max_new_tokens=32)
+#             generated_ids_trimmed = [
+#                 out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+#             ]
+#             output_text = self.tokenizer.batch_decode(
+#                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+#             )
+#             response_label = self.find_first_substring(output_text[0])
+#
+#             res = {"image_id": image_id, "response": output_text, "response_label": response_label, "true_label": sample["label"][0]}
+#             print(output_text, response_label, sample["label"][0])
+#             self.res.append(res)
+#             if step > 0 and step % 20 == 0:
+#                 self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j["response_label"] == j["true_label"]]) / len(self.res)}")
+#             step += 1
+#             if step == 400:
+#                 break
+#
+#         self.logger.info("各类别准确率:")
+#         for label in self.config["image_labels"]:
+#             count_total = 0
+#             count_true = 0
+#             for res in self.res:
+#                 if res["true_label"] == label:
+#                     count_total += 1
+#                     if res["response_label"] == label:
+#                         count_true += 1
+#             self.logger.info(f"{label}有{count_total}个，预测准确率：{count_true/count_total*100}%")
+#
+#     def eval_Qwen2_VL_classify_block(self, data_iter):
+#         self.model.eval()
+#         total_loss = 0
+#         total_each_label = [0] * len(self.config["image_labels"])
+#         correct_each_label = [0] * len(self.config["image_labels"])
+#         num_batches = 0
+#         for sample in data_iter:
+#             labels = [self.config["image_label_map"][i] for i in sample["label"]]
+#             output_id = torch.tensor(labels).to(self.device)
+#             loss, logits = self.model(sample, output_id)
+#             total_loss += loss.item()
+#             num_batches += 1
+#
+#             for label in labels:
+#                 total_each_label[label] += 1
+#
+#             _, predicted_labels = torch.max(logits, dim=1)
+#
+#             for pred, true in zip(predicted_labels.cpu().numpy(), labels):  # 将张量移到CPU并转换为numpy数组以便索引
+#                 if pred == true:
+#                     correct_each_label[true] += 1
+#
+#         avg_loss = total_loss / num_batches if num_batches > 0 else float('inf')
+#         self.logger.info(f"评估平均损失: {avg_loss}")
+#         self.logger.info(f"评估总体准确度: {sum(correct_each_label) / sum(total_each_label)*100:.2f}%")
+#         for i, (correct, total) in enumerate(zip(correct_each_label, total_each_label)):
+#             accuracy = (correct / total) * 100 if total != 0 else 0
+#             self.logger.info(f"{self.config['image_labels'][i]} 有{total}个，预测准确率: {accuracy:.2f}%")
+#
+#         self.model.train()
+#
+#     def find_first_substring(self, main_string):
+#         substrings = self.config["image_labels"]
+#         for substring in substrings:
+#             if substring in main_string:
+#                 return substring
+#         return random.choice(substrings)
 
 
 
