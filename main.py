@@ -10,7 +10,7 @@ from evaluator import TextEvaluator
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # 创建一个日志文件名（你可以根据需要自定义文件名）
-log_file = 'log/log_text_lr&alga.log'
+log_file = 'log/log_text_block&textsave&loss_v2.log'
 
 # 配置日志，输出到控制台和文件
 logging.basicConfig(level=logging.INFO,
@@ -122,44 +122,76 @@ def Text_Train(config, model_title='', save = False):
 
 
 def grid_search():
+    # outputs = []
+    # for learning_rate in [1e-5]:
+    #     config['learning_rate'] = learning_rate
+    #     for lr_scheduler in [True, False]:
+    #         config['lr_scheduler'] = lr_scheduler
+    #         for loss_type in ['focal', 'ce']:
+    #             config['loss_type'] = loss_type
+    #             if loss_type == 'focal':
+    #                 for ce_reduction, focal_reduction in [('sum','sum'), ('sum','mean')] :
+    #                     config['ce_reduction'] = ce_reduction
+    #                     config['focal_reduction'] = focal_reduction
+    #                     for alpha in [0.5,  0.7, 0.9, 1.0] :
+    #                         config['alpha'] = alpha
+    #                         for gamma in [0.5, 1, 1.5, 2, 2.5, 3]:
+    #                             config['gamma'] = gamma
+    #
+    #                             model_title = f"{config['lr_scheduler']}_{learning_rate}_{loss_type}_{ce_reduction}_{focal_reduction}_{alpha}_{gamma}"
+    #                             _, _, micro_f1s = Text_Train(config, model_title)
+    #                             output = {'learning_rate': learning_rate, 'lr_scheduler': lr_scheduler,
+    #                                       'loss_type': loss_type, 'ce_reduction':ce_reduction,'alpha':alpha,'gamma':gamma,
+    #                                       'focal_reduction':focal_reduction,'micro_f1s': micro_f1s}
+    #                             outputs.append(output)
+    #
+    #                 else:
+    #                     for ce_reduction in ['mean']:
+    #                         config['ce_reduction'] = ce_reduction
+    #                         model_title = f"{config['lr_scheduler']}_{learning_rate}_{loss_type}_{ce_reduction}_NA_NA_NA"
+    #                         _, _, micro_f1s = Text_Train(config, model_title)
+    #                         output = {'learning_rate': learning_rate, 'lr_scheduler': lr_scheduler,
+    #                                       'loss_type': loss_type, 'ce_reduction':ce_reduction,'alpha':'NA','gamma':'NA',
+    #                                       'focal_reduction':'NA','micro_f1s': micro_f1s}
+    #                         outputs.append(output)
     outputs = []
-    for learning_rate in [1e-5]:
-        config['learning_rate'] = learning_rate
-        for lr_scheduler in [True, False]:
-            config['lr_scheduler'] = lr_scheduler
-            for loss_type in ['focal', 'ce']:
-                config['loss_type'] = loss_type
-                if loss_type == 'focal':
-                    for ce_reduction, focal_reduction in [('sum','sum'), ('sum','mean')] :
-                        config['ce_reduction'] = ce_reduction
-                        config['focal_reduction'] = focal_reduction
-                        for alpha in [0.5,  0.7, 0.9, 1.0] :
-                            config['alpha'] = alpha
-                            for gamma in [0.5, 1, 1.5, 2, 2.5, 3]:
-                                config['gamma'] = gamma
+    for output_block in ['BiLSTM', 'BiLSTM+Transformer']:
+        config['output_block'] = output_block
+        for input_text_save in ['user+', 'user-customer-', 'user+customer-']:
+            config['input_text_save'] = input_text_save
+            for batch_size in [3, 6, 12, 24, 36]:
+                config['batch_size'] = batch_size
+                for loss_type in ['focal', 'ce']:
+                    config['loss_type'] = loss_type
 
-                                model_title = f"{config['lr_scheduler']}_{learning_rate}_{loss_type}_{ce_reduction}_{focal_reduction}_{alpha}_{gamma}"
+                    if loss_type == 'focal':
+                        for ce_reduction in ['none', 'mean', 'sum'] :
+                            config['ce_reduction'] = ce_reduction
+                            for focal_reduction in ['mean', 'sum']:
+                                config['focal_reduction'] = focal_reduction
+
+                                model_title = f"{config['output_block']}_{config['input_text_save']}_{loss_type}_{ce_reduction}_{focal_reduction}_{batch_size}"
                                 _, _, micro_f1s = Text_Train(config, model_title)
-                                output = {'learning_rate': learning_rate, 'lr_scheduler': lr_scheduler,
-                                          'loss_type': loss_type, 'ce_reduction':ce_reduction,'alpha':alpha,'gamma':gamma,
-                                          'focal_reduction':focal_reduction,'micro_f1s': micro_f1s}
+                                output = {'model': output_block, 'input_text_save': input_text_save,
+                                          'loss_type': loss_type, 'batch_size':batch_size,
+                                          'ce_reduction':ce_reduction,'focal_reduction':focal_reduction,'micro_f1s': micro_f1s}
                                 outputs.append(output)
 
                     else:
-                        for ce_reduction in ['mean']:
+                        for ce_reduction in ['mean', 'sum']:
                             config['ce_reduction'] = ce_reduction
-                            model_title = f"{config['lr_scheduler']}_{learning_rate}_{loss_type}_{ce_reduction}_NA_NA_NA"
+                            model_title = f"{config['output_block']}_{config['input_text_save']}_{loss_type}_{ce_reduction}_{'NA'}_{batch_size}"
                             _, _, micro_f1s = Text_Train(config, model_title)
-                            output = {'learning_rate': learning_rate, 'lr_scheduler': lr_scheduler,
-                                          'loss_type': loss_type, 'ce_reduction':ce_reduction,'alpha':'NA','gamma':'NA',
-                                          'focal_reduction':'NA','micro_f1s': micro_f1s}
+                            output = {'model': output_block, 'input_text_save': input_text_save,
+                                      'loss_type': loss_type, 'batch_size': batch_size,
+                                      'ce_reduction': ce_reduction, 'focal_reduction': 'NA',
+                                      'micro_f1s': micro_f1s}
                             outputs.append(output)
 
-
     output_data = pd.DataFrame(outputs)
-    save_path = "log/table_lr&alga_100epoch.csv"
+    save_path = "log/table_block&textsave&loss_v2.csv"
     output_data.to_csv(save_path, index=False)
 
 if __name__ == '__main__':
-
-    Text_Train(config,save=True)
+    grid_search()
+    # Text_Train(config,save=False)
