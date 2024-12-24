@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.optim import Adam, SGD
 from transformers import AutoModel
 import os
+import torch.nn.functional as F
 from qwen_vl_utils import process_vision_info
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 
@@ -117,6 +118,33 @@ class CustomPoolingLayer(nn.Module):
         return pooled
 
 
+class CustomCNN(nn.Module):
+    def __init__(self, hidden_size, num_filters, filter_sizes):
+        super(CustomCNN, self).__init__()
+        self.convs = nn.ModuleList([
+            nn.Conv1d(in_channels=hidden_size,
+                      out_channels=num_filters,
+                      kernel_size=fs)
+            for fs in filter_sizes
+        ])
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        # x: (batch_size, seq_len, hidden_size)
+        x = x.permute(0, 2, 1)  # (batch_size, hidden_size, seq_len)
+
+        # Apply convolution + ReLU + max pooling
+        conv_outputs = [
+            F.max_pool1d(F.relu(conv(x)), kernel_size=conv(x).size(2)).squeeze(2)
+            for conv in self.convs
+        ]
+
+        # Concatenate along the filter dimension
+        out = torch.cat(conv_outputs, dim=1)
+        out = self.dropout(out)
+        return out  # (batch_size, num_filters * len(filter_sizes))
+
+
 class TextModel(nn.Module):
     def __init__(self, config, weights=None):
         super(TextModel, self).__init__()
@@ -133,8 +161,17 @@ class TextModel(nn.Module):
         self.encoder = AutoModel.from_pretrained(config['model_path'])
 
         # 冻结预训练模型的参数
-        for name, param in self.encoder.named_parameters():
-            param.requires_grad = False
+        # for name, param in self.encoder.named_parameters():
+        #     param.requires_grad = False
+
+        for i, layer in enumerate(self.encoder.layers):
+            # 冻结前 19 个 DecoderLayer
+            if i <22:
+                for param in layer.parameters():
+                    param.requires_grad = False
+            else:
+                for param in layer.parameters():
+                    param.requires_grad = True
 
         hidden_size = self.encoder.config.hidden_size
 
@@ -147,17 +184,6 @@ class TextModel(nn.Module):
         # Layer Normalization 层
         self.layer_norm = nn.LayerNorm(hidden_size)
 
-        # Transformer 层
-        self.transformer_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_size, nhead=8, dim_feedforward=hidden_size * 4, dropout=0.1
-        )
-
-        # 4 层的 Transformer 编码器
-        transformer_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_size, nhead=8, dim_feedforward=hidden_size * 4, dropout=0.1
-        )
-        self.transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=4)
-
         # 线性层
         self.ffn = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 3),
@@ -166,7 +192,9 @@ class TextModel(nn.Module):
         )
 
         # 池化层
-        self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
+        # self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
+        filters = [2,4,6,8]
+        self.pooling = CustomCNN(hidden_size,int(hidden_size/len(filters)),filters)
 
         # 分类器层
         self.classify = nn.Linear(hidden_size, class_num)
@@ -177,64 +205,26 @@ class TextModel(nn.Module):
     def forward(self, input_ids, labels=None):
         # print('input shape:',input_ids.shape)
         # 使用 AutoModel 进行编码
-        if self.pooling_mode == 'cls':
-            x = self.encoder(input_ids).last_hidden_state[:, -1, :]  # x.shape: [batch_size, hidden_size]
-        else:
-            x = self.encoder(input_ids).last_hidden_state  # x.shape: [batch_size, seq_length, hidden_size]
-            # print('encoder shape:',x.shape)
 
-            # 根据 output_block 参数选择输出
-            if self.output_block == 'BiLSTM':
-                # 使用 BiLSTM 处理编码后的特征
-                lstm_output, _ = self.bilstm(x)
-                # print('bilstm middle shape:',lstm_output.shape)
-                lstm_output = self.lstm_proj(lstm_output)
-                # print('bilstm output shape:',lstm_output.shape)
-                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-                # print('bilstm+layer_norm output shape:',x.shape)
-            elif self.output_block == 'Transformer':
-                # 使用 Transformer 处理编码后的特征
-                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
-            elif self.output_block == 'TransformerEncoder':
-                # 使用 TransformerEncoder 处理编码后的特征
-                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
-            elif self.output_block == 'BiLSTM+Transformer':
-                # 使用 BiLSTM 和 Transformer 处理编码后的特征
-                lstm_output, _ = self.bilstm(x)
-                lstm_output = self.lstm_proj(lstm_output)
-                x = self.layer_norm(lstm_output + x)
-                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
-            elif self.output_block == 'BiLSTM+TransformerEncoder':
-                # 使用 BiLSTM 和 TransformerEncoder 处理编码后的特征
-                lstm_output, _ = self.bilstm(x)
-                lstm_output = self.lstm_proj(lstm_output)
-                x = self.layer_norm(lstm_output + x)
-                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
-            elif self.output_block == 'Transformer+BiLSTM':
-                # 使用 Transformer 和 BiLSTM 处理编码后的特征
-                x = self.transformer_layer(x)  # x.shape: [batch_size, seq_length, hidden_size]
-                lstm_output, _ = self.bilstm(x)
-                lstm_output = self.lstm_proj(lstm_output)
-                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-            elif self.output_block == 'TransformerEncoder+BiLSTM':
-                # 使用 TransformerEncoder 和 BiLSTM 处理编码后的特征
-                x = self.transformer_encoder(x)  # x.shape: [batch_size, seq_length, hidden_size]
-                lstm_output, _ = self.bilstm(x)
-                lstm_output = self.lstm_proj(lstm_output)
-                x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-            else:
-                x = x
+        x = self.encoder(input_ids).last_hidden_state  # x.shape: [batch_size, seq_length, hidden_size]
+        # print('encoder shape:',x.shape)
+
+
+        # 使用 BiLSTM 处理编码后的特征
+        lstm_output, _ = self.bilstm(x)
+        # print('bilstm middle shape:',lstm_output.shape)
+        lstm_output = self.lstm_proj(lstm_output)
+        # print('bilstm output shape:',lstm_output.shape)
+        x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
+        # print('bilstm+layer_norm output shape:',x.shape)
+
 
         # 使用线性层处理特征
         x = self.ffn(x)  # x.shape: [batch_size, seq_length, hidden_size]
         # print('ffn output shape:',x.shape)
 
-        if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
-            # 使用池化层处理特征
-            x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
-            # print('pooling output shape:',x.shape)
-        elif self.pooling_mode != 'cls':
-            raise ValueError("Invalid pooling mode: {}".format(self.pooling))
+        # 使用池化层处理特征
+        x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
 
         # 使用分类器层进行分类
         logits = self.classify(x)
@@ -249,7 +239,6 @@ class TextModel(nn.Module):
             return logits
 
 
-
 def choose_optimizer(config, model):
     optimizer = config["optimizer"]
     learning_rate = config["learning_rate"]
@@ -260,10 +249,8 @@ def choose_optimizer(config, model):
         return SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
 
 
-
-
 class ImageModel(nn.Module):
-    def __init__(self, config, dtype = torch.bfloat16):
+    def __init__(self, config, dtype=torch.bfloat16):
         super(ImageModel, self).__init__()
 
         self.dtype = dtype
@@ -294,6 +281,107 @@ class ImageModel(nn.Module):
         # 损失函数
         self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
 
+    def load_pretrained_model(self):
+        model_name = self.config["model_path_image"]
+        self.encoder = Qwen2VLForConditionalGeneration.from_pretrained(
+            model_name, torch_dtype="auto", device_map="auto", output_hidden_states=True
+        ).eval()
+        # 冻结预训练模型的参数
+        for name, param in self.encoder.named_parameters():
+            param.requires_grad = False
+        min_pixels = 256 * 28 * 28
+        max_pixels = 1280 * 28 * 28
+        self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
+
+    def encoder_Qwen2_VL(self, config, image_ids):
+        messages = []
+        for image_id in image_ids:
+            message = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "image": os.path.join("train/images", image_id),
+                        },
+                        {"type": "text", "text": "Hello, describe this picture"},
+                    ],
+                }
+            ]
+            messages.append(message)
+        texts = [
+            self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
+            for msg in messages
+        ]
+
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.processor(
+            text=texts,
+            images=image_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to(self.encoder.device)
+
+        encoded = self.encoder(**inputs)
+        # 检查输出对象中的隐藏状态
+        hidden_states = encoded.hidden_states  # 这是一个 tuple，每一层的输出为一个张量
+        last_hidden_state = hidden_states[-1]
+        return last_hidden_state
+
+    def forward(self, inputs, labels=None):
+        last_hidden_state = self.encoder_Qwen2_VL(self.config, inputs["image_id"])
+        # 使用线性层处理特征
+        x = self.ffn(last_hidden_state)  # x.shape: [batch_size, seq_length, hidden_size]
+
+        if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
+            # 使用池化层处理特征
+            x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
+            # print('pooling output shape:',x.shape)
+        elif self.pooling_mode != 'cls':
+            raise ValueError("Invalid pooling mode: {}".format(self.pooling))
+
+        # 使用分类器层进行分类
+        logits = self.classify(x)
+        # 如果有标签，计算损失
+        if labels is not None:
+            # print(logits.shape,labels.shape)
+            loss = self.loss(logits, labels)
+            return loss, logits
+        else:
+            return logits
+
+class TIModel(nn.Module):
+    def __init__(self, config, dtype=torch.bfloat16):
+        super(TIModel, self).__init__()
+
+        self.dtype = dtype
+        self.config = config
+        self.pooling_mode = config["pooling_mode"]
+        self.class_num = len(config["image_labels"])
+
+        hidden_size = config["hidden_size_image"]
+        # 线性层
+        self.ffn = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 3),
+            nn.ReLU(),
+            nn.Linear(hidden_size * 3, hidden_size),
+        )
+        # 池化层
+        self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
+        # 分类器层
+        self.classify = nn.Linear(hidden_size, self.class_num)
+        self.encoder = None
+        self.processor = None
+        self.load_pretrained_model()
+
+        alpha = config['alpha']
+        gamma = config['gamma']
+        ce_reduction = config['ce_reduction']
+        focal_reduction = config['focal_reduction']
+        loss_type = config['loss_type']
+        # 损失函数
+        self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
 
     def load_pretrained_model(self):
         model_name = self.config["model_path_image"]

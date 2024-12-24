@@ -34,7 +34,7 @@ def Text_Train(config, model_title='', save = False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载训练数据
-    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text')
+    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text', augment=False)
     # for idx, x in enumerate(train_data.dataset.data):
     #     if any(i is None for i in x):
     #         print(f"Problematic entry at index {idx}: {x}")
@@ -193,5 +193,5 @@ def grid_search():
     output_data.to_csv(save_path, index=False)
 
 if __name__ == '__main__':
-    grid_search()
-    # Text_Train(config,save=False)
+    # grid_search()
+    Text_Train(config,save=True)

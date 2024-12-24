@@ -5,12 +5,14 @@ from config import config
 import json
 import csv
 from tqdm import tqdm  # 引入进度条库
+import pandas as pd
 
 
 def predict(model, data, map):
     model.eval()
     device = next(model.parameters()).device  # 获取模型设备
     print(device)
+
     pred = {}
 
     # 为数据加载器添加进度条
@@ -24,14 +26,29 @@ def predict(model, data, map):
 
     return pred
 
+def convert2submit(test_file, pred, save_path):
+
+    test_data = json.load(open(test_file, "r"))
+    save_data = []
+    for i, example in enumerate(test_data):
+        example["predict"] = pred[example["id"]]
+        save_data.append(example)
+
+    df = pd.DataFrame(save_data)
+
+    df.to_csv(save_path, index=None, encoding="utf-8-sig")
+
+
 if __name__ == '__main__':
     model = TextModel(config)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(device)
     model.load_state_dict(torch.load('./TextModel', map_location=device))
+    model.to(device)
     test_dataset = load_data(config=config, path='./test1/test_text.json', task_type='text')
     map = {v: k for k, v in config['label_map'].items()}
 
-    data = test_dataset.dataset.json_data
+    data = json.load(open('./test1/test1.json', "r"))
 
     pred = predict(model, test_dataset, map)
 
@@ -39,8 +56,10 @@ if __name__ == '__main__':
     for sample in data:
         if sample['id'] in pred:
             sample['predict'] = pred[sample['id']]
+        else:
+            sample['predict'] = '其他类别图片'
 
-    with open('result/viewer_json.json', "w", encoding="utf-8") as f:
+    with open('viewer_json.json', "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
     with open('submit.csv', mode='w', newline='', encoding='utf-8') as file:

@@ -1,5 +1,5 @@
 config = {
-    "model_path": "./Qwen2.5-1.5B",
+    "model_path": "./Qwen2.5-7B",
     "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B",
 
     # loader config：
@@ -9,7 +9,7 @@ config = {
     "valid_image_path": "./train/valid_image.json",
     "batch_size": 3,
     "batch_size_image": 2,
-    "input_text_save": 'user+',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
+    "input_text_save": 'user+customer-',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
     "max_length_map": {'user-': 36,
                        'user+': 128,
                        'user-customer-': 324,
@@ -25,15 +25,15 @@ config = {
     # Loss config：
     "alpha": 0.7,
     "gamma": 1,
-    "ce_reduction": 'sum',  # 'mean' or 'sum' or 'none'
+    "ce_reduction": 'mean',  # 'mean' or 'sum' or 'none'
     "focal_reduction": 'mean',  # 'mean' or 'sum' or 'none'
-    "loss_type": 'focal',  # 'ce' or 'focal'
+    "loss_type": 'ce',  # 'ce' or 'focal'
 
     # Train config：
     "epochs": 100,
-    "lr_scheduler": False,
-    "patience": 5,
-    "learning_rate": 1e-4,
+    "lr_scheduler": True,
+    "patience": 10,
+    "learning_rate": 5e-6,
     "optimizer": 'adam',
 
     "label_map": {'商品材质': 0,
