@@ -1,6 +1,6 @@
 config = {
-    "model_path": "./Qwen2.5-7B",
-    "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B",
+    "model_path": "./Qwen2.5-1.5B",
+    "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B-Instruct",
 
     # loader config：
     "train_text_path": "./train/train_text.json",

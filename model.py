@@ -6,7 +6,7 @@ import os
 import torch.nn.functional as F
 from qwen_vl_utils import process_vision_info
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-
+from peft import LoraConfig, get_peft_model
 
 class CustomLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, weight=None, ce_reduction='none', focal_reduction='mean', loss_type='focal'):
@@ -385,14 +385,60 @@ class TIModel(nn.Module):
 
     def load_pretrained_model(self):
         model_name = self.config["model_path_image"]
-        self.encoder = Qwen2VLForConditionalGeneration.from_pretrained(
+        # 加载预训练模型
+        base_model = Qwen2VLForConditionalGeneration.from_pretrained(
             model_name, torch_dtype="auto", device_map="auto", output_hidden_states=True
-        ).eval()
-        # 冻结预训练模型的参数
+        )
+
+        visual_target_modules = [
+            "visual.blocks.0.attn.qkv",
+            "visual.blocks.5.attn.qkv",
+            "visual.blocks.10.attn.qkv",
+            "visual.blocks.15.attn.qkv",
+            "visual.blocks.20.attn.qkv",
+            "visual.blocks.25.attn.qkv",
+            "visual.blocks.30.attn.qkv"
+        ]
+
+        text_target_modules = [
+            "model.layers.0.self_attn.q_proj",
+            "model.layers.0.self_attn.v_proj",
+            "model.layers.10.self_attn.q_proj",
+            "model.layers.10.self_attn.v_proj",
+            "model.layers.15.self_attn.q_proj",
+            "model.layers.15.self_attn.v_proj",
+            "model.layers.20.self_attn.q_proj",
+            "model.layers.20.self_attn.v_proj",
+            "model.layers.25.self_attn.q_proj",
+            "model.layers.25.self_attn.v_proj"
+        ]
+
+        # 定义 LoRA 配置
+        lora_config = LoraConfig(
+            r=8,  # LoRA rank
+            lora_alpha=32,  # 缩放系数
+            target_modules= visual_target_modules + text_target_modules,  # 应用 LoRA 的层
+            lora_dropout=0.1,  # Dropout 概率
+            bias="none",  # 偏置处理
+            task_type="CAUSAL_LM",  # 任务类型
+        )
+
+        # 应用 LoRA
+        self.encoder = get_peft_model(base_model, lora_config)
+
+        # 冻结非 LoRA 参数
         for name, param in self.encoder.named_parameters():
-            param.requires_grad = False
+            if "lora_" not in name:  # 仅微调 LoRA 参数
+                param.requires_grad = False
+
+        # 打印lora层
+        for name, param in self.encoder.named_parameters():
+            if "lora_" in name:
+                print(name, param.size())
+
         min_pixels = 256 * 28 * 28
-        max_pixels = 1280 * 28 * 28
+        # max_pixels = 1280 * 28 * 28
+        max_pixels = 1080 * 24 * 24
         self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
 
     def encoder_Qwen2_VL(self, config, image_ids):
@@ -404,7 +450,7 @@ class TIModel(nn.Module):
                     "content": [
                         {
                             "type": "image",
-                            "image": os.path.join("train/images", image_id),
+                            "image": os.path.join("/root/autodl-tmp/WWW2025-MDSIRC/train/images", image_id),
                         },
                         {"type": "text", "text": "Hello, describe this picture"},
                     ],
@@ -430,6 +476,8 @@ class TIModel(nn.Module):
         hidden_states = encoded.hidden_states  # 这是一个 tuple，每一层的输出为一个张量
         last_hidden_state = hidden_states[-1]
         return last_hidden_state
+
+
 
     def forward(self, inputs, labels=None):
         last_hidden_state = self.encoder_Qwen2_VL(self.config, inputs["image_id"])
