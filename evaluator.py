@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from loader import load_data
 import os
 import random
-# from qwen_vl_utils import process_vision_info
+from qwen_vl_utils import process_vision_info
 """
 模型效果测试
 """
@@ -200,7 +200,7 @@ class ImageEvaluator:
             print(output_text, response_label, sample["label"][0])
             self.res.append(res)
             if step > 0 and step % 20 == 0:
-                self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j["response_label"] == j["true_label"]]) / len(self.res)}")
+                self.logger.info(f"Current Acc: {len([1 for i,j in enumerate(self.res) if j['response_label'] == j['true_label']]) / len(self.res)}")
             step += 1
             if step == 400:
                 break
