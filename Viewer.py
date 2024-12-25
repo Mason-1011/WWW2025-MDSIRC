@@ -16,6 +16,8 @@ class Viewer:
         self.data = None
         self.current_index = 0  # 默认显示第一个产品
         self.interactive_mode = False  # 默认非交互模式
+        self.filtered_data = None  # 新增存储过滤后的数据
+        self.current_filter = None  # 当前筛选条件
 
     def load_data_from_path(self, json_file_paths):
         """
@@ -138,6 +140,16 @@ class Viewer:
 
         return None, None
 
+    def filter_output(self, target_output):
+        if target_output == 'None':
+            self.filtered_data = self.data
+        else:
+            self.filtered_data = [item for item in self.data if item.get('output') == target_output]
+            self.current_index = 0
+            self.current_filter = target_output
+
+    def get_current_data(self):
+        return self.filtered_data if self.filtered_data is not None else self.data
 
 class InteractiveViewer(tk.Tk):
     def __init__(self, viewer):
@@ -163,6 +175,19 @@ class InteractiveViewer(tk.Tk):
 
         self.id_entry = tk.Entry(self.top_frame, bd=2, relief="solid")
         self.id_entry.pack(side="left", padx=5)
+
+        self.filter_label = tk.Label(self.top_frame, text="Filter by output:")
+        self.filter_label.pack(side="left", padx=5)
+
+        self.filter_entry = tk.Entry(self.top_frame, bd=2, relief="solid")
+        self.filter_entry.pack(side="left", padx=5)
+
+        self.filter_button = tk.Button(self.top_frame, text="Apply Filter", command=self.apply_filter, bd=2,
+                                       relief="solid")
+        self.filter_button.pack(side="left", padx=5)
+
+        self.current_filter_label = tk.Label(self.top_frame, text="Current Filter: None")
+        self.current_filter_label.pack(side="left", padx=15)
 
         self.search_button = tk.Button(self.top_frame, text="Search by ID", command=self.search_by_id, bd=2, relief="solid")
         self.search_button.pack(side="left", padx=5)
@@ -217,19 +242,28 @@ class InteractiveViewer(tk.Tk):
         else:
             messagebox.showinfo("Error", "Sample not found")
 
+    def apply_filter(self):
+        target_output = self.filter_entry.get()
+        if target_output:
+            self.viewer.filter_output(target_output)
+            self.current_filter_label.config(text=f"Current Filter: {target_output}")
+            self.show_next_sample()
+        else:
+            messagebox.showinfo("Error", "Please enter a valid output to filter.")
+
     def show_next_sample(self):
-        if self.viewer.current_index >= len(self.viewer.data):
+        if self.viewer.current_index >= len(self.viewer.get_current_data()):
             self.viewer.current_index = 0  # Reset to the first sample
-        sample_id = self.viewer.data[self.viewer.current_index]['id']
+        sample_id = self.viewer.get_current_data()[self.viewer.current_index]['id']
         self.display_sample(sample_id)
         self.viewer.current_index += 1
 
     def show_last_sample(self):
         if self.viewer.current_index <= 0:
-            self.viewer.current_index = len(self.viewer.data) - 1  # Wrap around to the last sample
+            self.viewer.current_index = len(self.viewer.get_current_data()) - 1  # Wrap around to the last sample
         else:
             self.viewer.current_index -= 1  # Show the previous sample
-        sample_id = self.viewer.data[self.viewer.current_index]['id']
+        sample_id = self.viewer.get_current_data()[self.viewer.current_index]['id']
         self.display_sample(sample_id)
 
     def search_by_id(self):
@@ -255,9 +289,9 @@ if __name__ == "__main__":
     # viewer.load_data_from_path(["train/train.json", "test1/test1.json"])
     # 调用方法显示某个产品的信息和图片
     # viewer.display_sample_info("9b24d96f-2961-41ba-8113-e82f1522869f-12275",['id','output'],show_image=True)
-    with open('result/viewer_json.json', 'r') as f:
+    with open('train/train_image.json', 'r') as f:
         data = json.load(f)
-    viewer.load_data_from_json(data, images_dir='test1/images')
+    viewer.load_data_from_json(data, images_dir='train/images')
 
     # 启动交互式窗口
     app = InteractiveViewer(viewer)
