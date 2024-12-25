@@ -42,7 +42,7 @@ class TextDataset(Dataset):
     def load(self):
         self.load_preprocess(self.path)
         for sample in tqdm(self.json_data, desc="Appending Data", ncols=80):
-            self.append_data(sample)
+            self.append_data_image(sample)
 
     def load_preprocess(self, data_path):
         with open(data_path, 'r', encoding='utf-8') as file:
@@ -79,6 +79,15 @@ class TextDataset(Dataset):
         input_ids = torch.tensor(sample['input_ids'])
         output_id = torch.tensor(sample['output_id'])
         self.data.append([sample['id'], input_ids, output_id])
+
+    def append_data_image(self, sample):
+        id = sample['id']
+        text = sample['input_text']
+        label = sample['output']
+        # print(id)
+        image = os.path.dirname(self.path)+'/images/'+sample['image'][-1] if len(sample['image'])!=0 else None
+        self.data.append({'id':id,'text':text,'label':label,'image':image})
+
 
     def __len__(self):
         return len(self.data)
@@ -160,10 +169,12 @@ class ImageDataset(Dataset):
 if __name__ == '__main__':
     from config import config
 
-    data = load_data(config, task_type='text', path='./train/train_text.json', augment=True)
+    data = load_data(config, task_type='text', path='./train/valid_text.json', augment=False)
+    for batch in data:
+        print(batch)
     from Viewer import Viewer, InteractiveViewer
 
-    viewer = Viewer()
-    viewer.load_data_from_json(data.dataset.json_data, images_dir='./train/images')
-    app = InteractiveViewer(viewer)
-    app.mainloop()
+    # viewer = Viewer()
+    # viewer.load_data_from_json(data.dataset.json_data, images_dir='./train/images')
+    # app = InteractiveViewer(viewer)
+    # app.mainloop()

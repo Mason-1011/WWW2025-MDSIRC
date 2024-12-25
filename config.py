@@ -1,5 +1,5 @@
 config = {
-    "model_path": "./Qwen2.5-1.5B",
+    "model_path": "./Qwen2-VL-2B",
     "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B-Instruct",
 
     # loader config：
@@ -7,7 +7,7 @@ config = {
     "valid_text_path": "./train/valid_text.json",
     "train_image_path": "./train/train_image.json",
     "valid_image_path": "./train/valid_image.json",
-    "batch_size": 3,
+    "batch_size": 2,
     "batch_size_image": 2,
     "input_text_save": 'user+customer-',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
     "max_length_map": {'user-': 36,
@@ -33,7 +33,7 @@ config = {
     "epochs": 100,
     "lr_scheduler": True,
     "patience": 10,
-    "learning_rate": 5e-6,
+    "learning_rate": 5e-5,
     "optimizer": 'adam',
 
     "label_map": {'商品材质': 0,

@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from config import config
 from loader import load_data
-from model import TextModel, choose_optimizer
+from model import TextModel, TIModel, choose_optimizer
 from evaluator import TextEvaluator
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -34,7 +34,7 @@ def Text_Train(config, model_title='', save = False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载训练数据
-    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text', augment=False)
+    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text', augment=True)
     # for idx, x in enumerate(train_data.dataset.data):
     #     if any(i is None for i in x):
     #         print(f"Problematic entry at index {idx}: {x}")
@@ -44,7 +44,8 @@ def Text_Train(config, model_title='', save = False):
     # weights = calculate_weights_relation(train_data, 2).to(device)
 
     # 加载模型并转移到 GPU
-    model = TextModel(config)
+    # model = TextModel(config)
+    model = TIModel(config)
     model.to(device)
     # print(model.encoder.get_input_embeddings().weight.shape)
 
@@ -74,11 +75,12 @@ def Text_Train(config, model_title='', save = False):
 
         for index, batch_data in enumerate(train_data):
             # 将 batch 数据移到 GPU
-            id, input_ids, output_id = batch_data
-            input_ids, output_id = input_ids.to(device), output_id.to(device)
+            ids = batch_data['id']
+            labels = [config["label_map"][i] for i in batch_data["label"]]
+            output_ids = torch.tensor(labels).to(device)
 
             optimizer.zero_grad()
-            loss = model(input_ids, output_id)
+            loss, logits = model(batch_data, output_ids)
             loss.backward()
 
             optimizer.step()

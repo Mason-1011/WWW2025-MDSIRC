@@ -34,12 +34,19 @@ class TextEvaluator:
         device = next(self.model.parameters()).device  # 获取模型设备
 
         for index, batch_data in enumerate(self.valid_data):
-            id, input_ids, output_id = batch_data
-            input_ids, output_id = input_ids.to(device), output_id.to(device)
-
+            ids = batch_data['id']
+            labels = [self.config["label_map"][i] for i in batch_data["label"]]
+            output_ids = torch.tensor(labels).to(device)
             with torch.no_grad():
-                pred_results = self.model(input_ids)  # 不输入 labels，预测
-            self.write_stats(id, output_id, pred_results)
+                pred_results = self.model(batch_data)  # 不输入 labels，预测
+            self.write_stats(ids, output_ids, pred_results)
+        # for index, batch_data in enumerate(self.valid_data):
+        #     id, input_ids, output_id = batch_data
+        #     input_ids, output_id = input_ids.to(device), output_id.to(device)
+        #
+        #     with torch.no_grad():
+        #         pred_results = self.model(input_ids)  # 不输入 labels，预测
+        #     self.write_stats(id, output_id, pred_results)
 
         for item in self.valid_data.dataset.json_data:
             item_id = item['id']
