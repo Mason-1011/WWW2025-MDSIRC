@@ -7,13 +7,13 @@ config = {
     "valid_text_path": "./train/valid_text.json",
     "train_image_path": "./train/train_image.json",
     "valid_image_path": "./train/valid_image.json",
-    "batch_size": 2,
+    "batch_size": 3,
     "batch_size_image": 2,
     "input_text_save": 'user+customer-',  # 'user-' or 'user+' or 'user-customer-' or 'user+customer-'
     "max_length_map": {'user-': 36,
                        'user+': 128,
-                       'user-customer-': 324,
-                       'user+customer-': 324},
+                       'user-customer-': 200,
+                       'user+customer-': 200},
 
     # model config:
     "output_block": 'BiLSTM',  # 'BiLSTM' or 'Transformer' or 'TransformerEncoder' or 'BiLSTM+Transformer' or 'BiLSTM+TransformerEncoder'

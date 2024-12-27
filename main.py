@@ -9,6 +9,8 @@ from model import TextModel, TIModel, choose_optimizer
 from evaluator import TextEvaluator
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
+
+
 # 创建一个日志文件名（你可以根据需要自定义文件名）
 log_file = 'log/log_text_block&textsave&loss_v2.log'
 
@@ -96,6 +98,7 @@ def Text_Train(config, model_title='', save = False):
             f"开始测试 {model_title} 模型 第{epoch}轮效果：")
         micro_f1 = evaluator.eval(epoch)
         micro_f1s.append(micro_f1)
+        logger.info(f"预测错误的 id：{evaluator.wrong_ids}")
 
         if config['lr_scheduler']:
             # 更新学习率

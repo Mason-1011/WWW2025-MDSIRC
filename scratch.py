@@ -23,7 +23,7 @@ messages = [
                     "content": [
                         {
                             "type": "image",
-                            "image": "train/images/0a856d3d-6939-4a3b-b80c-46ff0ddb324d-461-0.jpg",
+                            "image": "train/sha/0a856d3d-6939-4a3b-b80c-46ff0ddb324d-461-0.jpg",
                         },
                         {"type": "text", "text": "Hello, describe this picture"},
                     ],

@@ -1,4 +1,4 @@
-from model import TextModel
+from model import TIModel
 from loader import load_data
 import torch
 from config import config
@@ -12,15 +12,18 @@ def predict(model, data, map):
     model.eval()
     device = next(model.parameters()).device  # 获取模型设备
     print(device)
-
+    map_ = {v:k for k,v in map.items()}
     pred = {}
 
     # 为数据加载器添加进度条
     for batch_data in tqdm(data, desc="Predicting", unit="batch"):
-        ids, input_ids, _ = batch_data
-        input_ids = input_ids.to(device)
+        ids = batch_data['id']
         with torch.no_grad():
-            pred_results = model(input_ids)
+            pred_results = model(batch_data)  # 不输入 labels，预测
+        # ids, input_ids, _ = batch_data
+        # input_ids = input_ids.to(device)
+        # with torch.no_grad():
+        #     pred_results = model(input_ids)
         pred_labels = torch.argmax(pred_results, dim=1).cpu().numpy()
         pred = {**pred, **{ids[idx]: map[pred_labels[idx]] for idx in range(len(ids))}}
 
@@ -40,7 +43,7 @@ def convert2submit(test_file, pred, save_path):
 
 
 if __name__ == '__main__':
-    model = TextModel(config)
+    model = TIModel(config)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     model.load_state_dict(torch.load('./TextModel', map_location=device))

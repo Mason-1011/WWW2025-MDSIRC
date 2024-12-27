@@ -85,7 +85,7 @@ class TextDataset(Dataset):
         text = sample['input_text']
         label = sample['output']
         # print(id)
-        image = os.path.dirname(self.path)+'/images/'+sample['image'][-1] if len(sample['image'])!=0 else None
+        image = os.path.dirname(self.path)+'/images/'+sample['image'][-1] if len(sample['image'])!=0 else 'None'
         self.data.append({'id':id,'text':text,'label':label,'image':image})
 
 
@@ -175,6 +175,6 @@ if __name__ == '__main__':
     from Viewer import Viewer, InteractiveViewer
 
     # viewer = Viewer()
-    # viewer.load_data_from_json(data.dataset.json_data, images_dir='./train/images')
+    # viewer.load_data_from_json(data.dataset.json_data, images_dir='./train/sha')
     # app = InteractiveViewer(viewer)
     # app.mainloop()

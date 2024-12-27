@@ -21,7 +21,7 @@ class TextEvaluator:
         self.valid_data = load_data(path='./train/valid_text.json', config=config, task_type='text', shuffle=False, augment=False)
         self.all_true_labels = []  # 用于存储所有真实标签
         self.all_pred_labels = []  # 用于存储所有预测标签
-        self.wrong_ids = []  # 用于存储错误预测的样本 ID
+
 
     def load_dict(self):
         self.stats_dict = {v: defaultdict(int) for k, v in self.map.items()}
@@ -30,6 +30,8 @@ class TextEvaluator:
     def eval(self, epoch):
         self.model.eval()
         self.load_dict()
+
+        self.wrong_ids = []  # 用于存储错误预测的样本 ID
 
         device = next(self.model.parameters()).device  # 获取模型设备
 

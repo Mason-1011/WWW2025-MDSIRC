@@ -7,6 +7,15 @@ import torch.nn.functional as F
 from qwen_vl_utils import process_vision_info
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from peft import LoraConfig, get_peft_model
+from PIL import Image
+import pytesseract
+import re
+
+import warnings
+
+# Suppress the specific warning
+warnings.filterwarnings("ignore", message="`return_dict_in_generate` is NOT set to `True`, but `output_hidden_states` is")
+
 
 class CustomLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, weight=None, ce_reduction='none', focal_reduction='mean', loss_type='focal'):
@@ -409,6 +418,11 @@ class TIModel(nn.Module):
 
         hidden_size = config["hidden_size_image"]
 
+        self.base_model = Qwen2VLForConditionalGeneration.from_pretrained(
+            config['model_path'], torch_dtype="auto", device_map="auto", output_hidden_states=True
+        )
+        self.processor = AutoProcessor.from_pretrained(self.config['model_path'])
+
         # 双向 LSTM 层
         self.bilstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size,
                               num_layers=1, batch_first=True, bidirectional=True)
@@ -429,7 +443,6 @@ class TIModel(nn.Module):
         # 分类器层
         self.classify = nn.Linear(hidden_size, self.class_num)
         self.encoder = None
-        self.processor = None
         self.load_pretrained_model_for_text_classify()
 
         alpha = config['alpha']
@@ -441,11 +454,7 @@ class TIModel(nn.Module):
         self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
 
     def load_pretrained_model_for_text_classify(self):
-        model_name = self.config["model_path"]
-        # 加载预训练模型
-        base_model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype="auto", device_map="auto", output_hidden_states=True
-        )
+
         text_target_modules = [f"model.layers.{i}.self_attn.q_proj" for i in range(0,26,1)] + [f"model.layers.{i}.self_attn.v_proj" for i in range(0,26,1)]
         # text_target_modules = [
         #     "model.layers.0.self_attn.q_proj",
@@ -471,7 +480,7 @@ class TIModel(nn.Module):
         )
 
         # 应用 LoRA
-        self.encoder = get_peft_model(base_model, lora_config)
+        self.encoder = get_peft_model(self.base_model, lora_config)
 
         # 冻结非 LoRA 参数
         for name, param in self.encoder.named_parameters():
@@ -483,47 +492,34 @@ class TIModel(nn.Module):
         #     if "lora_" in name:
         #         print(name, param.size())
 
-        min_pixels = 256 * 28 * 28
-        # max_pixels = 1280 * 28 * 28
-        max_pixels = 720 * 24 * 24
-        self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
 
-    def encoder_Qwen2_VL(self, config, inputs):
+    def encoder_Qwen2_VL(self, inputs):
         messages = []
+
         for i in range(len(inputs['id'])):
-            if False:
-                message = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "image": inputs['image'][i],
-                            },
-                            {"type": "text", "text": f"首先，描述图片内容(包含什么字？，是什么物品？)。然后根据‘对话记录’判断‘用户’的对话意图\n 对话记录：\"\"\" {inputs['text'][i]} \"\"\" " },
-                        ],
-                    }
-                ]
-            else:
-                message = [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text",
-                             "text": f"根据‘对话记录’判断‘用户’的对话意图\n 对话记录：\"\"\" {inputs['text'][i]} \"\"\" "},
-                        ],
-                    }
-                ]
+            ocr_text, descr_text = self.get_image_info(inputs['image'][i])
+            message = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text",
+                         "text": f"你是一个电商客服专家，请根据“对话记录”和“用户上传的图片中的重要内容”判断“用户”的对话意图"
+                                 f"\n\"\"\" 用户上传的{descr_text}"
+                                 # f"\n图片中的文字信息：{ocr_text}；"
+                                 f"\"\"\" "
+                                 f"\n对话记录：\"\"\" {inputs['text'][i]} \"\"\" "},
+                    ],
+                }
+            ]
+            # print(message)
             messages.append(message)
         texts = [
             self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
             for msg in messages
         ]
 
-        image_inputs, video_inputs = process_vision_info(messages)
         inputs = self.processor(
             text=texts,
-            images=image_inputs,
             padding=True,
             return_tensors="pt",
         )
@@ -535,10 +531,49 @@ class TIModel(nn.Module):
         last_hidden_state = hidden_states[-1]
         return last_hidden_state
 
+    def get_image_info(self,image_path):
+        if image_path == 'None':
+            return '无','无'
+        image = Image.open(image_path)
+        ocr_text = format_ocr_text(pytesseract.image_to_string(image, lang='chi_sim'))  # 中文简体
 
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image_path,
+                    },
+                    {"type": "text",
+                     "text": "假设你是一个淘宝客服，请你从客服的角度捕捉用户给你的图片中的重要内容"},
+                ],
+            }
+        ]
+
+        # Preparation for inference
+        text = self.processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        inputs = self.processor(
+            text=[text],
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to("cuda")
+
+        # Inference: Generation of the output
+        generated_ids = self.base_model.generate(**inputs, max_new_tokens=100)
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        descr_text = self.processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        return ocr_text, descr_text
 
     def forward(self, inputs, labels=None):
-        last_hidden_state = self.encoder_Qwen2_VL(self.config, inputs)
+        last_hidden_state = self.encoder_Qwen2_VL(inputs)
 
         # 使用 BiLSTM 处理编码后的特征
         lstm_output, _ = self.bilstm(last_hidden_state)
@@ -566,6 +601,14 @@ class TIModel(nn.Module):
             return loss, logits
         else:
             return logits
+
+def format_ocr_text(text):
+    # 替换多余空格为两个空格
+    text = re.sub(r' {2,}', '  ', text)
+    # 替换所有空行或多余换行符为两个空格
+    text = re.sub(r'\n+', '  ', text)
+    # 如果文本全是空格或"无"，替换为[空]或直接返回"无"
+    return text.strip() if text.strip() else "无"
 
 if __name__ == '__main__':
     from config import config

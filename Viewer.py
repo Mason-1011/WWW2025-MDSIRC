@@ -51,7 +51,7 @@ class Viewer:
                 print(f"文件格式错误：{file_path}")
         self.data = all_data
 
-    def load_data_from_json(self, json_data,images_dir='train/images'):
+    def load_data_from_json(self, json_data,images_dir='train/sha'):
         """
         读取并解析 JSON 数据。
         :param json_data:
@@ -74,8 +74,8 @@ class Viewer:
         :param img_path: 图片的相对路径
         :return: 完整的图片路径
         """
-        # 拼接完整的图片路径，假设图片存储在 `/images` 目录下
-        return os.path.join(base_dir, 'images', img_path)
+        # 拼接完整的图片路径，假设图片存储在 `/sha` 目录下
+        return os.path.join(base_dir, 'sha', img_path)
 
     def add_attribute(self, id, key, value):
         """
@@ -205,7 +205,7 @@ class InteractiveViewer(tk.Tk):
         self.text_area = tk.Text(self.frame, height=25, width=80)
         self.text_area.grid(row=1, column=0, pady=10, padx=10)
 
-        self.image_frame = tk.Frame(self.frame)  # New frame for images
+        self.image_frame = tk.Frame(self.frame)  # New frame for sha
         self.image_frame.grid(row=2, column=0, pady=10, padx=10)
 
         self.show_next_sample()  # Initialize showing the first sample
@@ -218,11 +218,11 @@ class InteractiveViewer(tk.Tk):
             for key, value in sample_info.items():
                 self.text_area.insert(tk.END, f"{key}: {value}\n")
 
-            # Clear existing images
+            # Clear existing sha
             for widget in self.image_frame.winfo_children():
                 widget.destroy()
 
-            # Display all images if available
+            # Display all sha if available
             if images:
                 for img in images:
                     # Ensure the image is in the correct format
@@ -232,12 +232,12 @@ class InteractiveViewer(tk.Tk):
                     # Check the shape of the image to ensure it's a valid image
                     if img.ndim == 3 and img.shape[2] == 3:  # RGB image
                         img_pil = Image.fromarray(img)  # Convert to PIL Image
-                        img_pil.thumbnail((250, 250))  # Resize images to fit horizontally
+                        img_pil.thumbnail((250, 250))  # Resize sha to fit horizontally
                         photo = ImageTk.PhotoImage(img_pil)
 
                         img_label = tk.Label(self.image_frame, image=photo)
                         img_label.image = photo  # Keep a reference to the image to prevent garbage collection
-                        img_label.pack(side="left", padx=10)  # Pack images side by side
+                        img_label.pack(side="left", padx=10)  # Pack sha side by side
 
         else:
             messagebox.showinfo("Error", "Sample not found")
