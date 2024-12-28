@@ -1,5 +1,5 @@
 config = {
-    "model_path": "./Qwen2-VL-2B",
+    "model_path": "./Qwen2-VL-7B-Instruct",
     "model_path_image": "/root/autodl-tmp/WWW2025-MDSIRC/Qwen2-VL-2B-Instruct",
 
     # loader config：

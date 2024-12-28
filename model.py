@@ -10,6 +10,7 @@ from peft import LoraConfig, get_peft_model
 from PIL import Image
 import pytesseract
 import re
+import deepspeed
 
 import warnings
 
@@ -127,127 +128,6 @@ class CustomPoolingLayer(nn.Module):
         return pooled
 
 
-class CustomCNN(nn.Module):
-    def __init__(self, hidden_size, num_filters, filter_sizes):
-        super(CustomCNN, self).__init__()
-        self.convs = nn.ModuleList([
-            nn.Conv1d(in_channels=hidden_size,
-                      out_channels=num_filters,
-                      kernel_size=fs)
-            for fs in filter_sizes
-        ])
-        self.dropout = nn.Dropout(0.5)
-
-    def forward(self, x):
-        # x: (batch_size, seq_len, hidden_size)
-        x = x.permute(0, 2, 1)  # (batch_size, hidden_size, seq_len)
-
-        # Apply convolution + ReLU + max pooling
-        conv_outputs = [
-            F.max_pool1d(F.relu(conv(x)), kernel_size=conv(x).size(2)).squeeze(2)
-            for conv in self.convs
-        ]
-
-        # Concatenate along the filter dimension
-        out = torch.cat(conv_outputs, dim=1)
-        out = self.dropout(out)
-        return out  # (batch_size, num_filters * len(filter_sizes))
-
-
-class TextModel(nn.Module):
-    def __init__(self, config, weights=None):
-        super(TextModel, self).__init__()
-
-        alpha = config['alpha']
-        gamma = config['gamma']
-        ce_reduction = config['ce_reduction']
-        focal_reduction = config['focal_reduction']
-        loss_type = config['loss_type']
-        class_num = len(config['label_map'])
-
-        self.pooling_mode = config['pooling_mode']
-        self.output_block = config['output_block']
-        self.encoder = AutoModel.from_pretrained(config['model_path'])
-
-        # 冻结预训练模型的参数
-        # for name, param in self.encoder.named_parameters():
-        #     param.requires_grad = False
-
-        for i, layer in enumerate(self.encoder.layers):
-            # 冻结前 19 个 DecoderLayer
-            if i <22:
-                for param in layer.parameters():
-                    param.requires_grad = False
-            else:
-                for param in layer.parameters():
-                    param.requires_grad = True
-
-        hidden_size = self.encoder.config.hidden_size
-
-        # 双向 LSTM 层
-        self.bilstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size,
-                              num_layers=1, batch_first=True, bidirectional=True)
-        # 投影层，将 BiLSTM 输出的 hidden_size * 2 投影回 hidden_size
-        self.lstm_proj = nn.Linear(hidden_size * 2, hidden_size)
-
-        # Layer Normalization 层
-        self.layer_norm = nn.LayerNorm(hidden_size)
-
-        # 线性层
-        self.ffn = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size * 3),
-            nn.ReLU(),
-            nn.Linear(hidden_size * 3, hidden_size),
-        )
-
-        # 池化层
-        # self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
-        filters = [2,4,6,8]
-        self.pooling = CustomCNN(hidden_size,int(hidden_size/len(filters)),filters)
-
-        # 分类器层
-        self.classify = nn.Linear(hidden_size, class_num)
-
-        # 损失函数
-        self.loss = CustomLoss(alpha, gamma, weights, ce_reduction, focal_reduction, loss_type)
-
-    def forward(self, input_ids, labels=None):
-        # print('input shape:',input_ids.shape)
-        # 使用 AutoModel 进行编码
-
-        x = self.encoder(input_ids).last_hidden_state  # x.shape: [batch_size, seq_length, hidden_size]
-        # print('encoder shape:',x.shape)
-
-
-        # 使用 BiLSTM 处理编码后的特征
-        lstm_output, _ = self.bilstm(x)
-        # print('bilstm middle shape:',lstm_output.shape)
-        lstm_output = self.lstm_proj(lstm_output)
-        # print('bilstm output shape:',lstm_output.shape)
-        x = self.layer_norm(lstm_output + x)  # x.shape: [batch_size, seq_length, hidden_size]
-        # print('bilstm+layer_norm output shape:',x.shape)
-
-
-        # 使用线性层处理特征
-        x = self.ffn(x)  # x.shape: [batch_size, seq_length, hidden_size]
-        # print('ffn output shape:',x.shape)
-
-        # 使用池化层处理特征
-        x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
-
-        # 使用分类器层进行分类
-        logits = self.classify(x)
-        # print('classify output shape:',logits.shape)
-
-        # 如果有标签，计算损失
-        if labels is not None:
-            # print(logits.shape,labels.shape)
-            loss = self.loss(logits, labels)
-            return loss
-        else:
-            return logits
-
-
 def choose_optimizer(config, model):
     optimizer = config["optimizer"]
     learning_rate = config["learning_rate"]
@@ -257,156 +137,10 @@ def choose_optimizer(config, model):
     elif optimizer == "sgd":
         return SGD(filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate)
 
-class ImageModel(nn.Module):
-    def __init__(self, config, dtype=torch.bfloat16):
-        super(ImageModel, self).__init__()
-
-        self.dtype = dtype
-        self.config = config
-        self.pooling_mode = config["pooling_mode"]
-        self.class_num = len(config["image_labels"])
-
-        hidden_size = config["hidden_size_image"]
-        # 线性层
-        self.ffn = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size * 3),
-            nn.ReLU(),
-            nn.Linear(hidden_size * 3, hidden_size),
-        )
-        # 池化层
-        self.pooling = CustomPoolingLayer(hidden_size, mode=config['pooling_mode'])
-        # 分类器层
-        self.classify = nn.Linear(hidden_size, self.class_num)
-        self.encoder = None
-        self.processor = None
-        self.load_pretrained_model()
-
-        alpha = config['alpha']
-        gamma = config['gamma']
-        ce_reduction = config['ce_reduction']
-        focal_reduction = config['focal_reduction']
-        loss_type = config['loss_type']
-        # 损失函数
-        self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
-
-    def load_pretrained_model(self):
-        model_name = self.config["model_path_image"]
-        # 加载预训练模型
-        base_model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype="auto", device_map="auto", output_hidden_states=True
-        )
-
-        visual_target_modules = [
-            "visual.blocks.0.attn.qkv",
-            "visual.blocks.5.attn.qkv",
-            "visual.blocks.10.attn.qkv",
-            "visual.blocks.15.attn.qkv",
-            "visual.blocks.20.attn.qkv",
-            "visual.blocks.25.attn.qkv",
-            "visual.blocks.30.attn.qkv"
-        ]
-
-        text_target_modules = [
-            "model.layers.0.self_attn.q_proj",
-            "model.layers.0.self_attn.v_proj",
-            "model.layers.10.self_attn.q_proj",
-            "model.layers.10.self_attn.v_proj",
-            "model.layers.15.self_attn.q_proj",
-            "model.layers.15.self_attn.v_proj",
-            "model.layers.20.self_attn.q_proj",
-            "model.layers.20.self_attn.v_proj",
-            "model.layers.25.self_attn.q_proj",
-            "model.layers.25.self_attn.v_proj"
-        ]
-
-        # 定义 LoRA 配置
-        lora_config = LoraConfig(
-            r=8,  # LoRA rank
-            lora_alpha=32,  # 缩放系数
-            target_modules= visual_target_modules + text_target_modules,  # 应用 LoRA 的层
-            lora_dropout=0.1,  # Dropout 概率
-            bias="none",  # 偏置处理
-            task_type="CAUSAL_LM",  # 任务类型
-        )
-
-        # 应用 LoRA
-        self.encoder = get_peft_model(base_model, lora_config)
-
-        # 冻结非 LoRA 参数
-        for name, param in self.encoder.named_parameters():
-            if "lora_" not in name:  # 仅微调 LoRA 参数
-                param.requires_grad = False
-
-        # 打印lora层
-        for name, param in self.encoder.named_parameters():
-            if "lora_" in name:
-                print(name, param.size())
-
-        min_pixels = 256 * 28 * 28
-        # max_pixels = 1280 * 28 * 28
-        max_pixels = 1080 * 24 * 24
-        self.processor = AutoProcessor.from_pretrained(model_name, min_pixels=min_pixels, max_pixels=max_pixels)
-
-    def encoder_Qwen2_VL(self, config, image_ids):
-        messages = []
-        for image_id in image_ids:
-            message = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "image": os.path.join("/root/autodl-tmp/WWW2025-MDSIRC/train/images", image_id),
-                        },
-                        {"type": "text", "text": "Hello, describe this picture"},
-                    ],
-                }
-            ]
-            messages.append(message)
-        texts = [
-            self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
-            for msg in messages
-        ]
-
-        image_inputs, video_inputs = process_vision_info(messages)
-        inputs = self.processor(
-            text=texts,
-            images=image_inputs,
-            padding=True,
-            return_tensors="pt",
-        )
-        inputs = inputs.to(self.encoder.device)
-
-        encoded = self.encoder(**inputs)
-        # 检查输出对象中的隐藏状态
-        hidden_states = encoded.hidden_states  # 这是一个 tuple，每一层的输出为一个张量
-        last_hidden_state = hidden_states[-1]
-        return last_hidden_state
 
 
 
-    def forward(self, inputs, labels=None):
-        last_hidden_state = self.encoder_Qwen2_VL(self.config, inputs["image_id"])
-        # 使用线性层处理特征
-        x = self.ffn(last_hidden_state)  # x.shape: [batch_size, seq_length, hidden_size]
-
-        if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
-            # 使用池化层处理特征
-            x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
-            # print('pooling output shape:',x.shape)
-        elif self.pooling_mode != 'cls':
-            raise ValueError("Invalid pooling mode: {}".format(self.pooling))
-
-        # 使用分类器层进行分类
-        logits = self.classify(x)
-        # 如果有标签，计算损失
-        if labels is not None:
-            # print(logits.shape,labels.shape)
-            loss = self.loss(logits, labels)
-            return loss, logits
-        else:
-            return logits
-
+# Model class definition (with minor changes for DeepSpeed support)
 class TIModel(nn.Module):
     def __init__(self, config, dtype=torch.bfloat16):
         super(TIModel, self).__init__()
@@ -416,12 +150,13 @@ class TIModel(nn.Module):
         self.pooling_mode = config["pooling_mode"]
         self.class_num = len(config["label_map"])
 
-        hidden_size = config["hidden_size_image"]
-
         self.base_model = Qwen2VLForConditionalGeneration.from_pretrained(
             config['model_path'], torch_dtype="auto", device_map="auto", output_hidden_states=True
         )
+        self.base_layer_names = [name for name, _ in self.base_model.named_modules()]
         self.processor = AutoProcessor.from_pretrained(self.config['model_path'])
+
+        hidden_size = self.base_model.config.hidden_size
 
         # 双向 LSTM 层
         self.bilstm = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size,
@@ -454,20 +189,12 @@ class TIModel(nn.Module):
         self.loss = CustomLoss(alpha, gamma, None, ce_reduction, focal_reduction, loss_type)
 
     def load_pretrained_model_for_text_classify(self):
+        target_layer_suffixes = ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj']
 
-        text_target_modules = [f"model.layers.{i}.self_attn.q_proj" for i in range(0,26,1)] + [f"model.layers.{i}.self_attn.v_proj" for i in range(0,26,1)]
-        # text_target_modules = [
-        #     "model.layers.0.self_attn.q_proj",
-        #     "model.layers.0.self_attn.v_proj",
-        #     "model.layers.10.self_attn.q_proj",
-        #     "model.layers.10.self_attn.v_proj",
-        #     "model.layers.15.self_attn.q_proj",
-        #     "model.layers.15.self_attn.v_proj",
-        #     "model.layers.20.self_attn.q_proj",
-        #     "model.layers.20.self_attn.v_proj",
-        #     "model.layers.25.self_attn.q_proj",
-        #     "model.layers.25.self_attn.v_proj"
-        # ]
+        # 筛选出符合条件的层名
+        text_target_modules = [name for name in self.base_layer_names if
+                            not name.startswith('visual') and any(
+                                name.endswith(suffix) for suffix in target_layer_suffixes)]
 
         # 定义 LoRA 配置
         lora_config = LoraConfig(
@@ -487,15 +214,8 @@ class TIModel(nn.Module):
             if "lora_" not in name:  # 仅微调 LoRA 参数
                 param.requires_grad = False
 
-        # 打印lora层
-        # for name, param in self.encoder.named_parameters():
-        #     if "lora_" in name:
-        #         print(name, param.size())
-
-
     def encoder_Qwen2_VL(self, inputs):
         messages = []
-
         for i in range(len(inputs['id'])):
             ocr_text, descr_text = self.get_image_info(inputs['image'][i])
             message = [
@@ -505,13 +225,11 @@ class TIModel(nn.Module):
                         {"type": "text",
                          "text": f"你是一个电商客服专家，请根据“对话记录”和“用户上传的图片中的重要内容”判断“用户”的对话意图"
                                  f"\n\"\"\" 用户上传的{descr_text}"
-                                 # f"\n图片中的文字信息：{ocr_text}；"
                                  f"\"\"\" "
                                  f"\n对话记录：\"\"\" {inputs['text'][i]} \"\"\" "},
                     ],
                 }
             ]
-            # print(message)
             messages.append(message)
         texts = [
             self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
@@ -526,14 +244,13 @@ class TIModel(nn.Module):
         inputs = inputs.to(self.encoder.device)
 
         encoded = self.encoder(**inputs)
-        # 检查输出对象中的隐藏状态
         hidden_states = encoded.hidden_states  # 这是一个 tuple，每一层的输出为一个张量
         last_hidden_state = hidden_states[-1]
         return last_hidden_state
 
-    def get_image_info(self,image_path):
+    def get_image_info(self, image_path):
         if image_path == 'None':
-            return '无','无'
+            return '无', '无'
         image = Image.open(image_path)
         ocr_text = format_ocr_text(pytesseract.image_to_string(image, lang='chi_sim'))  # 中文简体
 
@@ -560,7 +277,7 @@ class TIModel(nn.Module):
             padding=True,
             return_tensors="pt",
         )
-        inputs = inputs.to("cuda")
+        inputs = inputs.to(self.encoder.device)
 
         # Inference: Generation of the output
         generated_ids = self.base_model.generate(**inputs, max_new_tokens=100)
@@ -574,53 +291,52 @@ class TIModel(nn.Module):
 
     def forward(self, inputs, labels=None):
         last_hidden_state = self.encoder_Qwen2_VL(inputs)
-
-        # 使用 BiLSTM 处理编码后的特征
+        last_hidden_state = last_hidden_state.to(torch.float32)  # 转换为 float32
         lstm_output, _ = self.bilstm(last_hidden_state)
-        # print('bilstm middle shape:',lstm_output.shape)
         lstm_output = self.lstm_proj(lstm_output)
-        # print('bilstm output shape:',lstm_output.shape)
-        x = self.layer_norm(lstm_output + last_hidden_state)  # x.shape: [batch_size, seq_length, hidden_size]
+        x = self.layer_norm(lstm_output + last_hidden_state)
 
-        # 使用线性层处理特征
-        x = self.ffn(x)  # x.shape: [batch_size, seq_length, hidden_size]
+        x = self.ffn(x)
 
         if self.pooling_mode == 'mean' or self.pooling_mode == 'max' or self.pooling_mode == 'concat':
-            # 使用池化层处理特征
-            x = self.pooling(x)  # x.shape: [batch_size, hidden_size]
-            # print('pooling output shape:',x.shape)
+            x = self.pooling(x)
         elif self.pooling_mode != 'cls':
             raise ValueError("Invalid pooling mode: {}".format(self.pooling))
 
-        # 使用分类器层进行分类
         logits = self.classify(x)
-        # 如果有标签，计算损失
         if labels is not None:
-            # print(logits.shape,labels.shape)
             loss = self.loss(logits, labels)
             return loss, logits
         else:
             return logits
 
 def format_ocr_text(text):
-    # 替换多余空格为两个空格
     text = re.sub(r' {2,}', '  ', text)
-    # 替换所有空行或多余换行符为两个空格
     text = re.sub(r'\n+', '  ', text)
-    # 如果文本全是空格或"无"，替换为[空]或直接返回"无"
     return text.strip() if text.strip() else "无"
 
+# Main training loop with DeepSpeed
 if __name__ == '__main__':
     from config import config
     from loader import load_data
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data = load_data(config,'text','./train/train_text.json')
+    print("Using device:", device)
+
+    data = load_data(config, 'text', './train/train_text.json')
     model = TIModel(config).to(device)
+
+    # Initialize the model with DeepSpeed
+    model_engine, optimizer, _, _ = deepspeed.initialize(
+        args=None, model=model, model_parameters=model.parameters(), config_params="deepspeed_config.json"
+    )
+    print("Model is on device:", model_engine.module.device)
+
     model.train()
-    # 测试模型
     for samples in data:
         labels = [config["label_map"][i] for i in samples["label"]]
         output_ids = torch.tensor(labels).to(device)
-        loss, logits = model(samples, output_ids)
+
+        # Forward pass
+        loss, logits = model_engine(samples, output_ids)
         print(loss)

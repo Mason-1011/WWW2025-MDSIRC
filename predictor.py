@@ -51,24 +51,20 @@ if __name__ == '__main__':
     test_dataset = load_data(config=config, path='./test1/test_text.json', task_type='text')
     map = {v: k for k, v in config['label_map'].items()}
 
-    data = json.load(open('./test1/test1.json', "r"))
+    # data = json.load(open('./test1/test1.json', "r"))
 
-    pred = predict(model, test_dataset, map)
+    text_pred = predict(model, test_dataset, map)
+    image_pred = {sample['id']: sample['predict'] for sample in json.load(open('./result/pred_image.json'))}
+    pred = {**text_pred,**image_pred}
 
-    # 为 JSON 文件添加预测结果
-    for sample in data:
-        if sample['id'] in pred:
-            sample['predict'] = pred[sample['id']]
-        else:
-            sample['predict'] = '其他类别图片'
 
-    with open('viewer_json.json', "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    # with open('result/viewer_json.json', "w", encoding="utf-8") as f:
+    #     json.dump(data, f, ensure_ascii=False, indent=4)
 
-    with open('submit.csv', mode='w', newline='', encoding='utf-8') as file:
+    with open('result/submit.csv', mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         # Write header
         writer.writerow(['id', 'predict'])
         # Write rows
         for id_, prediction in pred.items():
-            writer.writerow([id_, prediction])
+            writer.writerow([id_.replace('_0',''), prediction])

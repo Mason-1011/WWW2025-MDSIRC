@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from config import config
 from loader import load_data
-from model import TextModel, TIModel, choose_optimizer
+from model import TIModel, choose_optimizer
 from evaluator import TextEvaluator
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -36,7 +36,7 @@ def Text_Train(config, model_title='', save = False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 加载训练数据
-    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text', augment=True)
+    train_data = load_data(path=config["train_text_path"], config=config, shuffle=False, task_type='text', augment=False)
     # for idx, x in enumerate(train_data.dataset.data):
     #     if any(i is None for i in x):
     #         print(f"Problematic entry at index {idx}: {x}")
